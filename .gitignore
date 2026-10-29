@@ -5,3 +5,4 @@ db/*.db
 exports/*.csv
 exports/plots/*.png
 powerbi/*.pbix
+film_reviews/

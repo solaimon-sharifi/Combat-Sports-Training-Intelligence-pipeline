@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Film Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="tape"></div>
+<main class="app">
+  <header>
+    <p class="eyebrow">Combat Sports Training Intelligence</p>
+    <h1>Film Room</h1>
+    <p class="lede">Coaching notes on your training footage. Upload a clip, or film a roll live on your phone.</p>
+  </header>
+
+  <form id="gate" class="panel" hidden>
+    <label class="field">
+      <span>Access code</span>
+      <input id="tokenInput" type="password" autocomplete="off">
+    </label>
+    <button class="btn" type="submit">Unlock</button>
+  </form>
+
+  <nav class="modes" aria-label="Review mode">
+    <button type="button" class="mode" data-mode="upload" aria-pressed="true">Upload film</button>
+    <button type="button" class="mode" data-mode="live" aria-pressed="false" hidden>Live camera</button>
+  </nav>
+  <p id="desktopNote" class="hint" hidden>Live camera works on phones and tablets. On this device, upload a clip instead.</p>
+
+  <label class="field">
+    <span>What are you working on? <em>optional</em></span>
+    <textarea id="context" rows="2" maxlength="500" placeholder="e.g. Keeping closed guard posture against a bigger partner"></textarea>
+  </label>
+
+  <section id="panelUpload" class="panel">
+    <label class="btn btn-ghost file">
+      Choose a clip
+      <input id="clipInput" type="file" accept="video/*">
+    </label>
+    <p class="hint">MP4 or MOV. Eight frames are sampled from the clip in your browser; the full video is never uploaded.</p>
+    <video id="clipVideo" class="offscreen" playsinline muted preload="auto"></video>
+    <div id="thumbs" class="thumbs"></div>
+    <button id="reviewClip" class="btn" type="button" disabled>Get feedback</button>
+  </section>
+
+  <section id="panelLive" class="panel" hidden>
+    <div class="stage">
+      <video id="liveVideo" playsinline muted></video>
+      <p id="cue" class="cue" aria-live="polite">Start the camera and point it at the mat.</p>
+    </div>
+    <div class="row">
+      <button id="liveStart" class="btn" type="button">Start camera</button>
+      <button id="liveStop" class="btn btn-ghost" type="button" disabled>Stop and review</button>
+    </div>
+    <p id="liveStats" class="hint"></p>
+  </section>
+
+  <div id="notice" class="notice" role="alert" hidden></div>
+
+  <section id="result" class="panel" hidden>
+    <div class="result-head">
+      <h2>Feedback</h2>
+      <span id="resultMeta" class="meta"></span>
+    </div>
+    <div id="resultBody" class="body"></div>
+  </section>
+
+  <section class="history">
+    <h2>Past reviews</h2>
+    <div id="history"></div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

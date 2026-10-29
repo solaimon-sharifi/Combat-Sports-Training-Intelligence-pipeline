@@ -182,6 +182,57 @@ python scripts/export_for_powerbi.py # -> exports/*.csv
 Then follow [`powerbi/SETUP.md`](powerbi/SETUP.md) to build the dashboard
 in Power BI Desktop against `exports/*.csv`.
 
+### Film Room app
+
+A small Flask app for reviewing footage: upload a clip, or (on a phone) film a
+roll live and get coaching cues while you record. The Anthropic key stays on
+the server; the browser only talks to `/api/*`.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...          # or: ant auth login
+python app/server.py                          # http://127.0.0.1:5000
+```
+
+- **Upload film** samples eight frames from a clip in the browser and sends
+  them for review. The video file itself is never uploaded.
+- **Live camera** (phones and tablets only) samples a frame every 8 seconds,
+  shows a one-line cue from the last three frames, and on "Stop and review"
+  sends eight evenly spaced frames for a full review.
+- Every review is saved to the `film_reviews` table and listed under "Past reviews".
+
+Settings (environment variables):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model used for reviews and cues |
+| `APP_TOKEN` | unset | Access code; when set, every `/api/*` call must send it |
+| `RATE_LIMIT_PER_MIN` | `20` | Requests per client IP per minute |
+| `HOST` / `PORT` | `127.0.0.1` / `5000` | Bind address |
+
+**Live camera needs HTTPS** on a phone: browsers only grant camera access to
+`localhost` or a secure origin. To test on your phone, expose the server through
+an HTTPS tunnel, or deploy it behind HTTPS. If you deploy it publicly, set
+`APP_TOKEN` so strangers can't spend your API credits. The rate limiter keys on
+the client IP, which behind a tunnel is the tunnel's address, so it becomes a
+shared limit for everyone using that tunnel.
+
+### AI film review (command line)
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com
+python scripts/analyze_film.py path/to/clip.mp4
+python scripts/analyze_film.py path/to/clip.mp4 --frames 12 --session-id 7
+```
+
+Samples a handful of frames from a video clip and sends them to a
+vision-capable Claude model for qualitative coaching notes (position, base,
+grips, structural issues). **This is not automatic event detection** — a
+sparse frame sample can't reliably identify fast transitions or name exact
+techniques, and the prompt tells the model to say so rather than guess.
+Reviews save to `film_reviews/*.md` (gitignored — real footage notes aren't
+portfolio content by default); `--session-id` also appends the review to
+that session's `notes` field in the database.
+
 ### Windows note
 
 If you hit `DLL load failed ... filename or extension is too long` when
@@ -199,6 +250,10 @@ scripts/
   log_session.py                  interactive CLI for logging a real session
   generate_synthetic_data.py      synthetic data generator (~65 sessions)
   export_for_powerbi.py           dump analysis + raw tables to exports/*.csv
+  analyze_film.py                 AI-assisted film review (frame sampling + Claude vision)
+app/
+  server.py                       Flask backend: /api/review, /api/live-cue, /api/reviews
+  static/                         Film Room front end (index.html, app.js, app.css)
 sql/
   takedown_trend.sql              rolling weekly takedown success rate
   submission_conceded_by_position.sql
@@ -213,4 +268,5 @@ powerbi/
   SETUP.md                        dashboard build recipe
 exports/                          generated CSVs + plots (gitignored)
 db/                                generated SQLite file (gitignored)
+film_reviews/                     AI film review notes (gitignored)
 ```

@@ -72,6 +72,17 @@ CREATE INDEX IF NOT EXISTS idx_exchanges_type ON exchanges(exchange_type_id);
 CREATE INDEX IF NOT EXISTS idx_exchanges_position ON exchanges(position_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date);
 
+-- AI film reviews produced by app/server.py. Not tied to a session on purpose:
+-- a clip can be reviewed before it is logged, or without being logged at all.
+CREATE TABLE IF NOT EXISTS film_reviews (
+    review_id    INTEGER PRIMARY KEY,
+    created_at   TEXT NOT NULL,
+    mode         TEXT NOT NULL CHECK (mode IN ('upload', 'live')),
+    context      TEXT,
+    frame_count  INTEGER NOT NULL CHECK (frame_count > 0),
+    feedback     TEXT NOT NULL
+);
+
 -- ============================================================
 -- Seed lookup values
 -- ============================================================
