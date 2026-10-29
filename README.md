@@ -200,6 +200,29 @@ python app/server.py                          # http://127.0.0.1:5000
   sends eight evenly spaced frames for a full review.
 - Every review is saved to the `film_reviews` table and listed under "Past reviews".
 
+**Disciplines.** Every review is written for one sport, chosen in the page
+(or with `--discipline` in the command-line script): Boxing, Kickboxing, Muay
+Thai, MMA, or Brazilian Jiu-Jitsu. Each sport has its own instructions, its own
+evidence categories, and a list of claims it must not make. A boxing report
+cannot use a grappling category, and the server rejects a model response that
+does. The criteria live in `app/disciplines.py`.
+
+**Insufficient evidence.** A report can say that the frames cannot support a
+judgment. Its evidence status is then "limited" or "insufficient", with an
+explanation, and the findings, priorities, and drills are left empty. Two
+synthetic test clips without an athlete produced this result.
+
+**Cache keys.** A stored report is reused only when the discipline, model,
+report version, and discipline instruction version all match, along with the
+frame times, frame contents, and note. Editing a discipline's instructions
+changes its version, so older reports are not reused.
+
+**Command-line review.**
+
+```bash
+python scripts/analyze_film.py path/to/clip.mp4 --discipline boxing
+```
+
 **Structured reports.** Each review returns JSON with a summary, observations
 (each cites frame numbers and carries an Observed, Inferred, or Uncertain
 label), technical findings grouped by area, corrective drills, up to three
@@ -233,7 +256,7 @@ Settings, in addition to the table below:
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                       # 46 tests, no network, mocked Claude
+python -m pytest                       # 98 tests, no network, mocked Claude
 RUN_LIVE_API=1 python -m pytest tests/test_live_api.py -s   # one real API call
 ```
 

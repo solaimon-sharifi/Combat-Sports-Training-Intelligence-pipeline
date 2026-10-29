@@ -1,8 +1,9 @@
-"""One real Claude call that checks the structured-report path end to end.
+"""Real Claude calls that check the structured-report path end to end.
 
-Skipped unless RUN_LIVE_API=1. It uses the key from the environment and never
-prints it. It spends a small amount of API credit, and the frames are plain
-grey test images, so it checks the plumbing, not analysis quality.
+Skipped unless RUN_LIVE_API=1. Each test uses the key from the environment and
+never prints it. Each spends a small amount of API credit. The frames are plain
+grey test images, so these check plumbing and sport-specific output shape, not
+analysis quality. Use real footage (see README) to judge quality.
 """
 import os
 import sys
@@ -15,26 +16,31 @@ sys.path.insert(0, str(ROOT / "app"))
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_LIVE_API") != "1",
-    reason="set RUN_LIVE_API=1 to make one real API call",
+    reason="set RUN_LIVE_API=1 to make real API calls",
 )
 
 
-def test_real_api_returns_a_validated_structured_report(tmp_path, monkeypatch, frame):
+@pytest.mark.parametrize("discipline", ["boxing", "bjj"])
+def test_real_api_returns_a_validated_report_for_the_selected_sport(discipline, frame):
     import anthropic
 
-    monkeypatch.setenv("FILM_ROOM_DB", str(tmp_path / "live.db"))
-    for name in ("server", "reports", "migrations"):
-        sys.modules.pop(name, None)
-    import server
+    import coaching
+    from disciplines import DISCIPLINES
+    from reports import parse_report
 
     assert os.environ.get("ANTHROPIC_API_KEY"), "ANTHROPIC_API_KEY is not set in this environment"
     bare = frame.split(",", 1)[1]
-    text, usage = server.request_report([bare, bare], [0.0, 8.0], "plumbing check")
-    report = server.parse_report(text, [0.0, 8.0])
+    client = anthropic.Anthropic(max_retries=2, timeout=180.0)
+    text, usage = coaching.request_report(
+        client, os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5"),
+        [bare, bare], [0.0, 8.0], discipline, "plumbing check",
+    )
+    report = parse_report(text, [0.0, 8.0], discipline)
 
-    assert report["summary"]
+    assert report["discipline"] == discipline
+    assert report["evidence_status"] in ("sufficient", "limited", "insufficient")
     assert report["sampling_caveat"]
     assert len(report["top_priorities"]) <= 3
-    print(f"\nmodel={server.MODEL} input_tokens={usage.input_tokens} output_tokens={usage.output_tokens}")
-    assert isinstance(usage.input_tokens, int) and usage.input_tokens > 0
-    assert isinstance(anthropic.__version__, str)
+    for finding in report["technical_findings"]:
+        assert finding["area"] in DISCIPLINES[discipline]["areas"]
+    print(f"\n{discipline}: input_tokens={usage.input_tokens} output_tokens={usage.output_tokens}")

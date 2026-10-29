@@ -4,13 +4,8 @@ const LIVE_MAX_CUES = 60;
 const LIVE_MAX_SAMPLES = 90;
 const LIVE_MAX_MS = 10 * 60 * 1000;
 const FRAME_SIDE = 768;
-const DEFAULT_CONFIG = { maxFrames: 16, minFrames: 4, frameIntervalSeconds: 8 };
-const SECTION_KINDS = {
-  "observations": "observe",
-  "areas to work on": "work",
-  "sampling caveat": "caveat",
-};
-const AREA_LABELS = {
+const DEFAULT_CONFIG = { maxFrames: 16, minFrames: 4, frameIntervalSeconds: 8, disciplines: {} };
+const LEGACY_AREA_LABELS = {
   guard_defense: "Guard and defense",
   stance_balance: "Stance and balance",
   footwork_distance: "Footwork and distance",
@@ -18,6 +13,10 @@ const AREA_LABELS = {
   defensive_reaction: "Defensive reactions",
 };
 const CONFIDENCE_LABELS = { observed: "Observed", inferred: "Inferred", uncertain: "Uncertain" };
+const EVIDENCE_TEXT = {
+  limited: "Limited evidence",
+  insufficient: "Insufficient evidence",
+};
 const ICONS = {
   observe:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -26,6 +25,11 @@ const ICONS = {
   caveat:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.9" r="0.6" fill="currentColor"/></svg>',
 };
+const SECTION_KINDS = {
+  "observations": "observe",
+  "areas to work on": "work",
+  "sampling caveat": "caveat",
+};
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +37,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem("filmroom-token") || "",
   config: DEFAULT_CONFIG,
+  discipline: localStorage.getItem("filmroom-discipline") || "",
   clipFrames: [],
   clipTimes: [],
   lastReport: null,
@@ -48,6 +53,16 @@ function el(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function areaLabel(discipline, area) {
+  const spec = state.config.disciplines[discipline];
+  return (spec && spec.areas[area]) || LEGACY_AREA_LABELS[area] || area;
+}
+
+function disciplineLabel(key) {
+  const spec = state.config.disciplines[key];
+  return spec ? spec.label : "Unspecified";
 }
 
 function setStatus(stateName, text) {
@@ -84,6 +99,36 @@ async function loadConfig() {
   } catch {
     state.config = DEFAULT_CONFIG;
   }
+  populateDisciplines();
+}
+
+function populateDisciplines() {
+  const select = $("discipline");
+  const keep = select.value || state.discipline;
+  select.replaceChildren();
+  select.append(new Option("Choose a discipline", ""));
+  for (const [key, spec] of Object.entries(state.config.disciplines)) {
+    select.append(new Option(spec.label, key));
+  }
+  state.discipline = keep && state.config.disciplines[keep] ? keep : "";
+  select.value = state.discipline;
+  updateControls();
+}
+
+$("discipline").addEventListener("change", (event) => {
+  state.discipline = event.target.value;
+  localStorage.setItem("filmroom-discipline", state.discipline);
+  updateControls();
+});
+
+/* Review and live controls need a discipline. Upload also needs a sampled clip. */
+function updateControls() {
+  const hasDiscipline = Boolean(state.discipline);
+  $("reviewClip").disabled = !(hasDiscipline && state.clipFrames.length > 0);
+  $("liveStart").disabled = !hasDiscipline || Boolean(state.live.stream);
+  $("disciplineHint").textContent = hasDiscipline
+    ? `Feedback will use the ${disciplineLabel(state.discipline)} criteria.`
+    : "Pick the sport the footage shows. Feedback is written against that sport only.";
 }
 
 /* Adaptive sampling: one frame per interval of clip length, clamped to the
@@ -212,8 +257,25 @@ function listNode(items) {
   return list;
 }
 
+function evidenceBanner(report) {
+  const status = report.evidence_status;
+  if (!status || status === "sufficient") return null;
+  const banner = el("div", `evidence evidence-${status}`);
+  banner.append(el("strong", null, EVIDENCE_TEXT[status]), el("p", null, report.evidence_note || ""));
+  return banner;
+}
+
+function areaOrder(report) {
+  const spec = state.config.disciplines[report.discipline];
+  if (spec) return Object.keys(spec.areas);
+  return Object.keys(LEGACY_AREA_LABELS);
+}
+
 function renderReport(container, report) {
   container.replaceChildren();
+
+  const banner = evidenceBanner(report);
+  if (banner) container.append(banner);
 
   container.append(el("p", "report-summary", report.summary));
 
@@ -247,7 +309,7 @@ function renderReport(container, report) {
   for (const finding of report.technical_findings) {
     (byArea[finding.area] = byArea[finding.area] || []).push(finding);
   }
-  const areaGroups = Object.keys(AREA_LABELS)
+  const areaGroups = areaOrder(report)
     .filter((area) => byArea[area])
     .map((area) => {
       const body = byArea[area].map((item) => {
@@ -259,7 +321,7 @@ function renderReport(container, report) {
         if (item.frames.length) row.append(frameRefs(report, item.frames));
         return row;
       });
-      return group(AREA_LABELS[area], body.length, listNode(body), false);
+      return group(areaLabel(report.discipline, area), body.length, listNode(body), false);
     });
   const findings = el("div", "group-body");
   if (areaGroups.length) {
@@ -271,7 +333,7 @@ function renderReport(container, report) {
 
   const drills = report.drills.map((drill) => {
     const card = el("article", "drill");
-    card.append(el("p", "drill-area", `Addresses: ${AREA_LABELS[drill.addresses] || drill.addresses}`));
+    card.append(el("p", "drill-area", `Addresses: ${areaLabel(report.discipline, drill.addresses)}`));
     card.append(el("h4", null, drill.name));
     card.append(el("p", null, drill.instructions));
     const meta = el("dl", "drill-meta");
@@ -293,7 +355,10 @@ function renderReport(container, report) {
 }
 
 function reportToText(report) {
-  const lines = [report.summary, ""];
+  const lines = [`${disciplineLabel(report.discipline)} report`, report.summary, ""];
+  if (report.evidence_status && report.evidence_status !== "sufficient") {
+    lines.push(`${EVIDENCE_TEXT[report.evidence_status]}: ${report.evidence_note}`, "");
+  }
   if (report.top_priorities.length) {
     lines.push("Top priorities:");
     report.top_priorities.forEach((item, i) => lines.push(`${i + 1}. ${item.title}: ${item.reason}`));
@@ -307,7 +372,7 @@ function reportToText(report) {
   if (report.technical_findings.length) {
     lines.push("Technical review:");
     report.technical_findings.forEach((item) =>
-      lines.push(`- ${AREA_LABELS[item.area]}: ${item.finding} Fix: ${item.fix}`)
+      lines.push(`- ${areaLabel(report.discipline, item.area)}: ${item.finding} Fix: ${item.fix}`)
     );
     lines.push("");
   }
@@ -383,6 +448,7 @@ async function runReview(mode, frames, times, button) {
   try {
     const data = await api("/api/review", {
       mode,
+      discipline: state.discipline,
       frames,
       frameTimes: times,
       context: $("context").value.trim(),
@@ -391,7 +457,7 @@ async function runReview(mode, frames, times, button) {
     renderReport($("resultCards"), data.report);
     const reused = data.cached ? " · reused an earlier report, no new API call" : "";
     $("resultMeta").textContent =
-      `Review #${data.id} · ${frames.length} frames over ${formatClock(times[times.length - 1] || 0)}${reused}`;
+      `${disciplineLabel(data.report.discipline)} · Review #${data.id} · ${frames.length} frames over ${formatClock(times[times.length - 1] || 0)}${reused}`;
     $("copyReport").hidden = false;
     $("result").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
     loadHistory();
@@ -402,6 +468,7 @@ async function runReview(mode, frames, times, button) {
   } finally {
     if (button) button.disabled = false;
     setStatus("idle", "Ready");
+    updateControls();
   }
 }
 
@@ -426,10 +493,10 @@ function loadClip(file) {
   state.clipTimes = [];
   $("strip").replaceChildren();
   $("progress").hidden = true;
-  $("reviewClip").disabled = true;
   $("dropSub").textContent = file.name;
   showNotice("");
   setStatus("busy", "Reading clip");
+  updateControls();
   clipVideo.src = URL.createObjectURL(file);
   readClip().catch((err) => {
     showNotice(err.message);
@@ -456,8 +523,8 @@ async function readClip() {
     addFrame(frame, i + 1, time);
     setProgress(i + 1, plan.count, plan.spacing);
   }
-  $("reviewClip").disabled = false;
   setStatus("idle", "Ready");
+  updateControls();
 }
 
 $("clipInput").addEventListener("change", (event) => {
@@ -490,6 +557,10 @@ $("reviewClip").addEventListener("click", () => {
 
 async function startLive() {
   showNotice("");
+  if (!state.discipline) {
+    showNotice("Choose a discipline before starting the camera.");
+    return;
+  }
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -511,12 +582,12 @@ async function startLive() {
     cuePending: false,
     startedAt: Date.now(),
   });
-  $("liveStart").disabled = true;
   $("liveStop").disabled = false;
   $("rec").hidden = false;
   setStatus("live", "Live");
   showCue("Watching for the first cue...");
   updateLiveStats();
+  updateControls();
   state.live.timer = setInterval(liveTick, LIVE_INTERVAL_MS);
   setTimeout(liveTick, 2000);
 }
@@ -551,7 +622,7 @@ async function liveTick() {
   live.cuePending = true;
   try {
     const frames = live.samples.slice(-LIVE_WINDOW).map((s) => s.src);
-    const data = await api("/api/live-cue", { frames });
+    const data = await api("/api/live-cue", { frames, discipline: state.discipline });
     if (live.stream) {
       showCue(data.cue);
       live.cues++;
@@ -580,11 +651,11 @@ async function stopLive(shouldReview) {
   const samples = live.samples;
   live.stream = null;
   $("liveVideo").srcObject = null;
-  $("liveStart").disabled = false;
   $("liveStop").disabled = true;
   $("rec").hidden = true;
   showCue("Camera off. Your session is saved to the report.");
   setStatus("idle", "Ready");
+  updateControls();
 
   if (!shouldReview) return;
   if (samples.length < 2) {
@@ -617,12 +688,13 @@ async function loadHistory() {
       const details = el("details", "history-item");
       const summary = el("summary");
       const chip = el("span", review.mode === "live" ? "chip live" : "chip", review.mode === "live" ? "Live" : "Upload");
+      const discipline = el("span", "chip discipline", review.discipline_label || "Unspecified");
       const when = el("span", "when", new Date(review.created_at).toLocaleString([], {
         dateStyle: "medium",
         timeStyle: "short",
       }));
       const frames = el("span", "when", `${review.frame_count} frames`);
-      summary.append(chip, when, frames);
+      summary.append(discipline, chip, when, frames);
       if (review.context) summary.append(el("span", "note-text", review.context));
 
       const body = el("div", "history-body");

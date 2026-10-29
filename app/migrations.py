@@ -16,6 +16,12 @@ MIGRATIONS = {
         "ALTER TABLE film_reviews ADD COLUMN output_tokens INTEGER",
         "CREATE INDEX IF NOT EXISTS idx_film_reviews_request ON film_reviews(request_hash)",
     ],
+    2: [
+        "ALTER TABLE film_reviews ADD COLUMN discipline TEXT",
+        "ALTER TABLE film_reviews ADD COLUMN prompt_version TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_film_reviews_cache "
+        "ON film_reviews(request_hash, discipline, model, report_version, prompt_version)",
+    ],
 }
 
 

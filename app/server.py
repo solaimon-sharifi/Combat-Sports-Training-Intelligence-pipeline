@@ -16,7 +16,6 @@ Environment:
     FILM_ROOM_DB        database path override (used by tests)
     HOST / PORT         default 127.0.0.1 / 5000
 """
-import hashlib
 import hmac
 import json
 import logging
@@ -33,17 +32,10 @@ from pathlib import Path
 import anthropic
 from flask import Flask, jsonify, request, send_from_directory
 
+import coaching
+from disciplines import REPORT_VERSION, config_payload, prompt_version, validate_discipline
 from migrations import migrate
-from reports import (
-    REPORT_SCHEMA,
-    REPORT_VERSION,
-    ModelRefused,
-    ReportError,
-    build_prompt,
-    parse_report,
-    to_plain_text,
-    validate_frame_times,
-)
+from reports import ModelRefused, ReportError, to_plain_text, validate_frame_times
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = Path(os.environ.get("FILM_ROOM_DB", ROOT / "db" / "training.db"))
@@ -60,17 +52,9 @@ if not 1 <= MAX_FRAMES <= 24 or not 1 <= MIN_FRAMES <= MAX_FRAMES:
     raise SystemExit("REVIEW_MAX_FRAMES must be 1-24 and REVIEW_MIN_FRAMES must be between 1 and it.")
 
 LIVE_MAX_FRAMES = 3
-REVIEW_MAX_TOKENS = 4000
-CUE_MAX_TOKENS = 120
 FRAME_MAX_CHARS = 1_500_000
 CONTEXT_MAX_CHARS = 500
 FRAME_PATTERN = re.compile(r"data:image/jpeg;base64,([A-Za-z0-9+/=]+)")
-
-LIVE_PROMPT = """You are a combat sports coach watching a live camera feed. The images are the most recent frames, a few seconds apart.
-
-Give one coaching cue of 20 words or fewer about something clearly visible right now: position, base, guard, stance, footwork, or distance. If nothing is clear, reply exactly: Nothing clear yet. Keep the camera on the athlete.
-
-Plain text only, no labels or markdown."""
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
@@ -148,57 +132,6 @@ def clean_context(raw):
     return re.sub(r"[<>]", "", raw).strip()[:CONTEXT_MAX_CHARS]
 
 
-def fingerprint(frames_b64, frame_times, context):
-    digest = hashlib.sha256()
-    digest.update(f"{MODEL}|{REPORT_VERSION}|{json.dumps(frame_times)}|{context}".encode())
-    for data in frames_b64:
-        digest.update(hashlib.sha256(data.encode()).digest())
-    return digest.hexdigest()
-
-
-def frame_content(frames_b64, frame_times):
-    content = []
-    total = len(frames_b64)
-    for i, (data, seconds) in enumerate(zip(frames_b64, frame_times), start=1):
-        content.append({"type": "text", "text": f"F{i:02d} of {total}, at {seconds:.1f} s into the clip:"})
-        content.append({
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
-        })
-    return content
-
-
-def request_report(frames_b64, frame_times, context):
-    """One structured-output call. Returns (text, usage) or raises a typed error."""
-    content = frame_content(frames_b64, frame_times)
-    content.append({"type": "text", "text": build_prompt(len(frames_b64), context)})
-    response = claude().messages.create(
-        model=MODEL,
-        max_tokens=REVIEW_MAX_TOKENS,
-        messages=[{"role": "user", "content": content}],
-        output_config={"format": {"type": "json_schema", "schema": REPORT_SCHEMA}},
-    )
-    if response.stop_reason == "refusal":
-        raise ModelRefused("The model declined to review these frames.")
-    if response.stop_reason == "max_tokens":
-        raise ReportError("The report was cut off before it finished. Try a shorter clip.")
-    text = "".join(block.text for block in response.content if block.type == "text")
-    return text, response.usage
-
-
-def generate_report(frames_b64, frame_times, context):
-    """Build a validated report. Retries once when the model's JSON fails validation."""
-    last_error = None
-    for attempt in range(2):
-        text, usage = request_report(frames_b64, frame_times, context)
-        try:
-            return parse_report(text, frame_times), usage
-        except ReportError as exc:
-            log.warning("Report failed validation on attempt %s: %s", attempt + 1, exc)
-            last_error = exc
-    raise last_error
-
-
 def ai_failure(exc):
     if isinstance(exc, anthropic.RateLimitError):
         return jsonify(error="The AI service is busy. Try again in a minute."), 429
@@ -218,22 +151,24 @@ def ai_failure(exc):
     return jsonify(error="The AI service returned an error. Try again."), 502
 
 
-def find_cached(request_hash):
+def find_cached(request_hash, discipline, model, prompt):
+    """A cached report is reused only when every setting that shapes it matches."""
     with closing(db()) as conn:
-        row = conn.execute(
+        return conn.execute(
             "SELECT review_id, report_json FROM film_reviews "
-            "WHERE request_hash = ? AND report_json IS NOT NULL ORDER BY review_id DESC LIMIT 1",
-            (request_hash,),
+            "WHERE request_hash = ? AND discipline = ? AND model = ? AND report_version = ? "
+            "AND prompt_version = ? AND report_json IS NOT NULL ORDER BY review_id DESC LIMIT 1",
+            (request_hash, discipline, model, REPORT_VERSION, prompt),
         ).fetchone()
-    return row
 
 
-def save_review(mode, context, frame_times, report, request_hash, usage):
+def save_review(mode, context, frame_times, report, request_hash, usage, prompt):
     with closing(db()) as conn:
         cur = conn.execute(
             "INSERT INTO film_reviews (created_at, mode, context, frame_count, feedback, report_json, "
-            "report_version, request_hash, frame_times_json, model, input_tokens, output_tokens) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "report_version, request_hash, frame_times_json, model, input_tokens, output_tokens, "
+            "discipline, prompt_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now().isoformat(timespec="seconds"),
                 mode,
@@ -247,29 +182,12 @@ def save_review(mode, context, frame_times, report, request_hash, usage):
                 MODEL,
                 getattr(usage, "input_tokens", None),
                 getattr(usage, "output_tokens", None),
+                report["discipline"],
+                prompt,
             ),
         )
         conn.commit()
         return cur.lastrowid
-
-
-def ask_claude_cue(frames_b64):
-    content = []
-    for i, data in enumerate(frames_b64, start=1):
-        content.append({"type": "text", "text": f"Frame {i}/{len(frames_b64)}:"})
-        content.append({
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
-        })
-    content.append({"type": "text", "text": LIVE_PROMPT})
-    response = claude().messages.create(
-        model=MODEL,
-        max_tokens=CUE_MAX_TOKENS,
-        messages=[{"role": "user", "content": content}],
-    )
-    if response.stop_reason == "refusal":
-        return "Nothing clear yet. Keep the camera on the athlete."
-    return "".join(block.text for block in response.content if block.type == "text").strip()
 
 
 @app.get("/")
@@ -284,6 +202,7 @@ def config():
         minFrames=MIN_FRAMES,
         frameIntervalSeconds=FRAME_INTERVAL_SECONDS,
         model=MODEL,
+        disciplines=config_payload(),
     )
 
 
@@ -294,19 +213,21 @@ def review():
     if mode not in ("upload", "live"):
         return jsonify(error="Mode must be 'upload' or 'live'."), 400
     try:
+        discipline = validate_discipline(body.get("discipline"))
         frames = parse_frames(body.get("frames"), MAX_FRAMES)
         frame_times = validate_frame_times(body.get("frameTimes"), len(frames))
         context = clean_context(body.get("context"))
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
 
-    request_hash = fingerprint(frames, frame_times, context)
-    cached = find_cached(request_hash)
+    prompt = prompt_version(discipline)
+    request_hash = coaching.request_fingerprint(MODEL, discipline, frames, frame_times, context)
+    cached = find_cached(request_hash, discipline, MODEL, prompt)
     if cached:
         return jsonify(id=cached["review_id"], report=json.loads(cached["report_json"]), cached=True)
 
     try:
-        report, usage = generate_report(frames, frame_times, context)
+        report, usage = coaching.generate_report(claude(), MODEL, frames, frame_times, discipline, context)
     except ModelRefused as exc:
         return jsonify(error=str(exc)), 422
     except ReportError as exc:
@@ -314,7 +235,7 @@ def review():
     except anthropic.APIError as exc:
         return ai_failure(exc)
 
-    review_id = save_review(mode, context, frame_times, report, request_hash, usage)
+    review_id = save_review(mode, context, frame_times, report, request_hash, usage, prompt)
     return jsonify(id=review_id, report=report, cached=False)
 
 
@@ -322,11 +243,12 @@ def review():
 def live_cue():
     body = request.get_json(silent=True) or {}
     try:
+        discipline = validate_discipline(body.get("discipline"))
         frames = parse_frames(body.get("frames"), LIVE_MAX_FRAMES)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     try:
-        cue = ask_claude_cue(frames)
+        cue = coaching.live_cue(claude(), MODEL, frames, discipline)
     except anthropic.APIError as exc:
         return ai_failure(exc)
     return jsonify(cue=cue)
@@ -336,13 +258,14 @@ def live_cue():
 def list_reviews():
     with closing(db()) as conn:
         rows = conn.execute(
-            "SELECT review_id AS id, created_at, mode, context, frame_count, feedback, report_json "
+            "SELECT review_id AS id, created_at, mode, context, frame_count, feedback, report_json, discipline "
             "FROM film_reviews ORDER BY review_id DESC LIMIT 20"
         ).fetchall()
     reviews = []
     for row in rows:
         item = dict(row)
         item["report"] = json.loads(item.pop("report_json")) if item.get("report_json") else None
+        item["discipline_label"] = coaching.discipline_label(item.get("discipline"))
         reviews.append(item)
     return jsonify(reviews=reviews)
 

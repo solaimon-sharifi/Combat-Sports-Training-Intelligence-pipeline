@@ -6,7 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "app"))
 
-SERVER_MODULES = ("server", "reports", "migrations")
+SERVER_MODULES = ("server", "coaching", "reports", "disciplines", "migrations")
 
 
 class FakeBlock:
@@ -46,36 +46,50 @@ class FakeClient:
         self.messages = FakeMessages(script)
 
 
-def valid_report_text(frame_count=4):
+AREA_FOR = {
+    "boxing": "punching",
+    "kickboxing": "kicking",
+    "muay_thai": "clinch_positioning",
+    "mma": "takedown_defense",
+    "bjj": "guard_retention",
+}
+
+
+def valid_report_text(discipline="bjj", evidence_status="sufficient"):
+    """A schema-shaped report for one discipline, using only that discipline's areas."""
     import json
 
+    area = AREA_FOR[discipline]
+    insufficient = evidence_status == "insufficient"
     return json.dumps({
-        "summary": "Closed guard with posture broken on the second frame.",
+        "evidence_status": evidence_status,
+        "evidence_note": "Partner partly hidden in frame 3." if evidence_status != "sufficient" else "",
+        "summary": "Visible posture is reasonable in the first frames, with a gap in frame 3.",
         "observations": [
-            {"description": "Hips square to the partner in the closed guard.", "frames": [1, 2], "confidence": "observed"},
-            {"description": "Grips may be inside the elbows.", "frames": [3], "confidence": "inferred"},
-            {"description": "Partner is partly hidden.", "frames": [], "confidence": "observed"},
+            {"description": "The athlete's head and shoulders are visible in frames 1 and 2.", "frames": [1, 2], "confidence": "observed"},
+            {"description": "Weight may sit back in frame 3.", "frames": [3], "confidence": "inferred"},
+            {"description": "The partner is partly hidden.", "frames": [], "confidence": "observed"},
         ],
-        "technical_findings": [
+        "technical_findings": [] if insufficient else [
             {
-                "area": "guard_defense",
-                "finding": "Elbows drift away from the ribs.",
-                "fix": "Keep elbows tight before opening the guard.",
+                "area": area,
+                "finding": "The posture breaks down in frame 3.",
+                "fix": "Keep the head and chest over the hips before the next movement.",
                 "frames": [3],
                 "confidence": "inferred",
             },
         ],
-        "drills": [
+        "drills": [] if insufficient else [
             {
-                "name": "Elbow-tight guard frames",
-                "addresses": "guard_defense",
-                "instructions": "Hold closed guard with elbows touching the ribs for ten seconds.",
-                "objective": "Keep the guard closed under pressure.",
+                "name": "Posture hold",
+                "addresses": area,
+                "instructions": "Hold the position for ten seconds and reset.",
+                "objective": "Keep posture under pressure.",
                 "reps_or_duration": "5 x 10 seconds",
             },
         ],
-        "top_priorities": [
-            {"title": "Elbow discipline", "reason": "Visible in frame 3.", "frames": [3]},
+        "top_priorities": [] if insufficient else [
+            {"title": "Posture under pressure", "reason": "Visible in frame 3.", "frames": [3]},
         ],
         "sampling_caveat": "Four frames cannot show transitions between positions.",
     })
