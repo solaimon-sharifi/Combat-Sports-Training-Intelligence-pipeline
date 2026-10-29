@@ -1,22 +1,59 @@
-const REVIEW_FRAMES = 8;
-const FRAME_SIDE = 768;
 const LIVE_INTERVAL_MS = 8000;
 const LIVE_WINDOW = 3;
 const LIVE_MAX_CUES = 60;
 const LIVE_MAX_SAMPLES = 90;
 const LIVE_MAX_MS = 10 * 60 * 1000;
+const FRAME_SIDE = 768;
+const DEFAULT_CONFIG = { maxFrames: 16, minFrames: 4, frameIntervalSeconds: 8 };
+const SECTION_KINDS = {
+  "observations": "observe",
+  "areas to work on": "work",
+  "sampling caveat": "caveat",
+};
+const AREA_LABELS = {
+  guard_defense: "Guard and defense",
+  stance_balance: "Stance and balance",
+  footwork_distance: "Footwork and distance",
+  offense: "Offense",
+  defensive_reaction: "Defensive reactions",
+};
+const CONFIDENCE_LABELS = { observed: "Observed", inferred: "Inferred", uncertain: "Uncertain" };
+const ICONS = {
+  observe:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  work:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>',
+  caveat:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.9" r="0.6" fill="currentColor"/></svg>',
+};
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
   token: localStorage.getItem("filmroom-token") || "",
+  config: DEFAULT_CONFIG,
   clipFrames: [],
+  clipTimes: [],
+  lastReport: null,
   live: { stream: null, timer: null, samples: [], cues: 0, cuePending: false, startedAt: 0 },
 };
 
 const isMobile =
   /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
   (navigator.maxTouchPoints > 1 && matchMedia("(pointer: coarse)").matches);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function setStatus(stateName, text) {
+  $("statusPill").dataset.state = stateName;
+  $("statusText").textContent = text;
+}
 
 function showNotice(message) {
   $("notice").textContent = message;
@@ -41,12 +78,37 @@ async function api(path, body) {
   return data;
 }
 
+async function loadConfig() {
+  try {
+    state.config = { ...DEFAULT_CONFIG, ...(await api("/api/config")) };
+  } catch {
+    state.config = DEFAULT_CONFIG;
+  }
+}
+
+/* Adaptive sampling: one frame per interval of clip length, clamped to the
+   configured floor and cap. Frames sit at the middle of each slice so the first
+   and last frames are not at the exact edges of the clip. */
+function planSampling(duration, config = state.config) {
+  const count = Math.min(
+    config.maxFrames,
+    Math.max(config.minFrames, Math.ceil(duration / config.frameIntervalSeconds))
+  );
+  const times = Array.from({ length: count }, (_, i) => (duration * (i + 0.5)) / count);
+  return { count, times, spacing: duration / count };
+}
+
+function formatClock(seconds) {
+  const whole = Math.floor(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
 $("gate").addEventListener("submit", (event) => {
   event.preventDefault();
   state.token = $("tokenInput").value.trim();
   localStorage.setItem("filmroom-token", state.token);
   $("gate").hidden = true;
-  loadHistory();
+  loadConfig().then(loadHistory);
 });
 
 function setMode(mode) {
@@ -99,73 +161,332 @@ function evenlySpaced(items, count) {
   );
 }
 
-function addThumb(src) {
+function addFrame(src, number, time) {
+  const figure = el("figure", "frame");
   const img = new Image();
   img.src = src;
-  img.alt = "Sampled frame";
-  $("thumbs").append(img);
+  img.alt = `Sampled frame ${number}`;
+  const caption = el("figcaption", null, `F${String(number).padStart(2, "0")} · ${formatClock(time)}`);
+  figure.append(img, caption);
+  $("strip").append(figure);
 }
 
-function showResult(text, meta) {
-  $("resultBody").textContent = text;
-  $("resultMeta").textContent = meta;
-  $("result").hidden = false;
-  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+function setProgress(done, total, spacing) {
+  $("progress").hidden = false;
+  $("progressBar").style.width = `${(done / total) * 100}%`;
+  $("progressText").textContent = done < total
+    ? `Sampling frame ${done} of ${total}`
+    : `${total} frames, about one every ${spacing.toFixed(1)} s`;
 }
 
-async function runReview(mode, frames, button) {
+/* ---------- report rendering ---------- */
+
+function frameRef(report, number) {
+  const frame = report.frames.find((f) => f.number === number);
+  const label = `F${String(number).padStart(2, "0")}`;
+  return frame ? `${label} · ${frame.label}` : label;
+}
+
+function frameRefs(report, numbers) {
+  const row = el("div", "frame-refs");
+  for (const number of numbers) row.append(el("span", "ref", frameRef(report, number)));
+  return row;
+}
+
+function confidenceBadge(confidence) {
+  return el("span", `badge badge-${confidence}`, CONFIDENCE_LABELS[confidence] || confidence);
+}
+
+function group(title, count, body, open = true) {
+  const details = el("details", "group");
+  details.open = open;
+  const summary = el("summary", "group-summary");
+  summary.append(el("span", "group-title", title), el("span", "group-count", String(count)));
+  details.append(summary, body);
+  return details;
+}
+
+function listNode(items) {
+  const list = el("div", "group-body");
+  items.forEach((node) => list.append(node));
+  return list;
+}
+
+function renderReport(container, report) {
+  container.replaceChildren();
+
+  container.append(el("p", "report-summary", report.summary));
+
+  const priorities = el("div", "priorities");
+  if (report.top_priorities.length) {
+    report.top_priorities.forEach((item, index) => {
+      const row = el("div", "priority");
+      row.append(el("span", "priority-rank", String(index + 1)));
+      const text = el("div", "priority-text");
+      text.append(el("strong", null, item.title), el("p", null, item.reason));
+      if (item.frames.length) text.append(frameRefs(report, item.frames));
+      row.append(text);
+      priorities.append(row);
+    });
+  } else {
+    priorities.append(el("p", "hint", "No priorities are clearly supported by this footage."));
+  }
+  container.append(group("Top priorities", report.top_priorities.length, priorities));
+
+  const observations = report.observations.map((item) => {
+    const row = el("div", "item");
+    const head = el("div", "item-head");
+    head.append(confidenceBadge(item.confidence));
+    row.append(head, el("p", null, item.description));
+    if (item.frames.length) row.append(frameRefs(report, item.frames));
+    return row;
+  });
+  container.append(group("Observations", observations.length, listNode(observations)));
+
+  const byArea = {};
+  for (const finding of report.technical_findings) {
+    (byArea[finding.area] = byArea[finding.area] || []).push(finding);
+  }
+  const areaGroups = Object.keys(AREA_LABELS)
+    .filter((area) => byArea[area])
+    .map((area) => {
+      const body = byArea[area].map((item) => {
+        const row = el("div", "item");
+        const head = el("div", "item-head");
+        head.append(confidenceBadge(item.confidence));
+        row.append(head, el("p", null, item.finding));
+        if (item.fix) row.append(el("p", "item-fix", `Fix: ${item.fix}`));
+        if (item.frames.length) row.append(frameRefs(report, item.frames));
+        return row;
+      });
+      return group(AREA_LABELS[area], body.length, listNode(body), false);
+    });
+  const findings = el("div", "group-body");
+  if (areaGroups.length) {
+    areaGroups.forEach((node) => findings.append(node));
+  } else {
+    findings.append(el("p", "hint", "No technical findings are clearly supported by this footage."));
+  }
+  container.append(group("Technical review", report.technical_findings.length, findings));
+
+  const drills = report.drills.map((drill) => {
+    const card = el("article", "drill");
+    card.append(el("p", "drill-area", `Addresses: ${AREA_LABELS[drill.addresses] || drill.addresses}`));
+    card.append(el("h4", null, drill.name));
+    card.append(el("p", null, drill.instructions));
+    const meta = el("dl", "drill-meta");
+    [["Objective", drill.objective], ["Reps or duration", drill.reps_or_duration]].forEach(([label, value]) => {
+      const pair = el("div");
+      pair.append(el("dt", null, label), el("dd", null, value));
+      meta.append(pair);
+    });
+    card.append(meta);
+    return card;
+  });
+  if (drills.length) {
+    container.append(group("Corrective drills", drills.length, listNode(drills)));
+  } else {
+    container.append(group("Corrective drills", 0, el("p", "hint", "No drills, because no area is clearly supported by this footage.")));
+  }
+
+  container.append(el("p", "caveat", report.sampling_caveat));
+}
+
+function reportToText(report) {
+  const lines = [report.summary, ""];
+  if (report.top_priorities.length) {
+    lines.push("Top priorities:");
+    report.top_priorities.forEach((item, i) => lines.push(`${i + 1}. ${item.title}: ${item.reason}`));
+    lines.push("");
+  }
+  if (report.observations.length) {
+    lines.push("Observations:");
+    report.observations.forEach((item) => lines.push(`- [${item.confidence}] ${item.description}`));
+    lines.push("");
+  }
+  if (report.technical_findings.length) {
+    lines.push("Technical review:");
+    report.technical_findings.forEach((item) =>
+      lines.push(`- ${AREA_LABELS[item.area]}: ${item.finding} Fix: ${item.fix}`)
+    );
+    lines.push("");
+  }
+  if (report.drills.length) {
+    lines.push("Corrective drills:");
+    report.drills.forEach((item) =>
+      lines.push(`- ${item.name} (${item.reps_or_duration}): ${item.instructions} Objective: ${item.objective}`)
+    );
+    lines.push("");
+  }
+  lines.push(`Sampling caveat: ${report.sampling_caveat}`);
+  return lines.join("\n");
+}
+
+/* Reports saved before structured output have only plain text. */
+function parseFeedback(text) {
+  const labelLine = /^(Observations|Areas to work on|Sampling caveat)\s*:\s*(.*)$/i;
+  const sections = [];
+  let current = { kind: null, title: null, lines: [] };
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    const match = line.match(labelLine);
+    if (match) {
+      if (current.title || current.lines.length) sections.push(current);
+      current = {
+        kind: SECTION_KINDS[match[1].toLowerCase()],
+        title: match[1],
+        lines: match[2] ? [match[2]] : [],
+      };
+    } else if (line) {
+      current.lines.push(line);
+    }
+  }
+  if (current.title || current.lines.length) sections.push(current);
+  return sections.length ? sections : [{ kind: null, title: null, lines: [text.trim()] }];
+}
+
+function renderLegacy(container, text) {
+  container.replaceChildren();
+  parseFeedback(text).forEach((section) => {
+    const block = el("div", "legacy");
+    if (section.title) {
+      const head = el("div", "section-head");
+      const icon = el("span", "section-icon");
+      icon.innerHTML = ICONS[section.kind] || "";
+      head.append(icon, el("h4", null, section.title));
+      block.append(head);
+    }
+    section.lines.forEach((line) => block.append(el("p", null, line)));
+    container.append(block);
+  });
+}
+
+function showSkeletons() {
+  const container = $("resultCards");
+  container.replaceChildren();
+  for (let i = 0; i < 3; i++) container.append(el("div", "skeleton"));
+}
+
+/* ---------- reviews ---------- */
+
+async function runReview(mode, frames, times, button) {
   showNotice("");
   if (button) button.disabled = true;
-  $("resultMeta").textContent = "Reviewing...";
+  setStatus("busy", "Reviewing");
+  $("empty").hidden = true;
+  $("result").hidden = false;
+  $("copyReport").hidden = true;
+  $("resultSource").textContent = mode === "live" ? "Live session" : "Uploaded clip";
+  $("resultSource").classList.toggle("live", mode === "live");
+  $("resultMeta").textContent = "Writing report...";
+  showSkeletons();
   try {
     const data = await api("/api/review", {
       mode,
       frames,
+      frameTimes: times,
       context: $("context").value.trim(),
     });
-    const source = mode === "live" ? "live session" : "uploaded clip";
-    showResult(data.feedback, `Review #${data.id} · ${frames.length} frames · ${source}`);
+    state.lastReport = data.report;
+    renderReport($("resultCards"), data.report);
+    const reused = data.cached ? " · reused an earlier report, no new API call" : "";
+    $("resultMeta").textContent =
+      `Review #${data.id} · ${frames.length} frames over ${formatClock(times[times.length - 1] || 0)}${reused}`;
+    $("copyReport").hidden = false;
+    $("result").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
     loadHistory();
   } catch (err) {
+    $("result").hidden = true;
+    $("empty").hidden = false;
     showNotice(err.message);
   } finally {
     if (button) button.disabled = false;
+    setStatus("idle", "Ready");
   }
 }
 
-const clipVideo = $("clipVideo");
-
-$("clipInput").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  state.clipFrames = [];
-  $("thumbs").replaceChildren();
-  $("reviewClip").disabled = true;
-  showNotice("");
-  clipVideo.src = URL.createObjectURL(file);
+$("copyReport").addEventListener("click", async () => {
+  const button = $("copyReport");
   try {
-    await new Promise((resolve, reject) => {
-      clipVideo.onloadeddata = resolve;
-      clipVideo.onerror = () => reject(new Error("This browser can't read that video. Try an MP4 (H.264)."));
-    });
-    if (!Number.isFinite(clipVideo.duration) || clipVideo.duration <= 0) {
-      throw new Error("Couldn't read the clip length. Try an MP4 (H.264).");
-    }
-    for (let i = 0; i < REVIEW_FRAMES; i++) {
-      await seek(clipVideo, (clipVideo.duration * (i + 0.5)) / REVIEW_FRAMES);
-      const frame = captureFrame(clipVideo);
-      state.clipFrames.push(frame);
-      addThumb(frame);
-    }
-    $("reviewClip").disabled = false;
-  } catch (err) {
-    showNotice(err.message);
+    await navigator.clipboard.writeText(reportToText(state.lastReport));
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
   }
+  setTimeout(() => { button.textContent = "Copy"; }, 1600);
+});
+
+/* ---------- upload ---------- */
+
+const clipVideo = $("clipVideo");
+const dropzone = $("dropzone");
+
+function loadClip(file) {
+  state.clipFrames = [];
+  state.clipTimes = [];
+  $("strip").replaceChildren();
+  $("progress").hidden = true;
+  $("reviewClip").disabled = true;
+  $("dropSub").textContent = file.name;
+  showNotice("");
+  setStatus("busy", "Reading clip");
+  clipVideo.src = URL.createObjectURL(file);
+  readClip().catch((err) => {
+    showNotice(err.message);
+    setStatus("idle", "Ready");
+  });
+}
+
+async function readClip() {
+  await new Promise((resolve, reject) => {
+    clipVideo.onloadeddata = resolve;
+    clipVideo.onerror = () => reject(new Error("This browser can't read that video. Try an MP4 (H.264)."));
+  });
+  if (!Number.isFinite(clipVideo.duration) || clipVideo.duration <= 0) {
+    throw new Error("Couldn't read the clip length. Try an MP4 (H.264).");
+  }
+  const plan = planSampling(clipVideo.duration);
+  setProgress(0, plan.count, plan.spacing);
+  for (let i = 0; i < plan.count; i++) {
+    const time = plan.times[i];
+    await seek(clipVideo, time);
+    const frame = captureFrame(clipVideo);
+    state.clipFrames.push(frame);
+    state.clipTimes.push(time);
+    addFrame(frame, i + 1, time);
+    setProgress(i + 1, plan.count, plan.spacing);
+  }
+  $("reviewClip").disabled = false;
+  setStatus("idle", "Ready");
+}
+
+$("clipInput").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) loadClip(file);
+});
+
+dropzone.addEventListener("click", () => $("clipInput").click());
+dropzone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  dropzone.classList.add("is-over");
+});
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-over"));
+dropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropzone.classList.remove("is-over");
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  $("clipInput").files = transfer.files;
+  loadClip(file);
 });
 
 $("reviewClip").addEventListener("click", () => {
-  runReview("upload", state.clipFrames, $("reviewClip"));
+  runReview("upload", state.clipFrames, state.clipTimes, $("reviewClip"));
 });
+
+/* ---------- live camera ---------- */
 
 async function startLive() {
   showNotice("");
@@ -192,9 +513,23 @@ async function startLive() {
   });
   $("liveStart").disabled = true;
   $("liveStop").disabled = false;
-  $("cue").textContent = "Watching...";
+  $("rec").hidden = false;
+  setStatus("live", "Live");
+  showCue("Watching for the first cue...");
+  updateLiveStats();
   state.live.timer = setInterval(liveTick, LIVE_INTERVAL_MS);
   setTimeout(liveTick, 2000);
+}
+
+function showCue(text) {
+  const cue = $("cue");
+  cue.textContent = text;
+  if (!reduceMotion) {
+    cue.animate(
+      [{ opacity: 0.3, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 300, easing: "ease-out" }
+    );
+  }
 }
 
 async function liveTick() {
@@ -207,32 +542,34 @@ async function liveTick() {
   const video = $("liveVideo");
   if (!video.videoWidth) return;
 
-  if (live.samples.length < LIVE_MAX_SAMPLES) live.samples.push(captureFrame(video));
+  if (live.samples.length < LIVE_MAX_SAMPLES) {
+    live.samples.push({ src: captureFrame(video), t: (Date.now() - live.startedAt) / 1000 });
+  }
   updateLiveStats();
 
   if (live.cuePending || live.cues >= LIVE_MAX_CUES) return;
   live.cuePending = true;
   try {
-    const data = await api("/api/live-cue", { frames: live.samples.slice(-LIVE_WINDOW) });
+    const frames = live.samples.slice(-LIVE_WINDOW).map((s) => s.src);
+    const data = await api("/api/live-cue", { frames });
     if (live.stream) {
-      $("cue").textContent = data.cue;
+      showCue(data.cue);
       live.cues++;
+      updateLiveStats();
     }
   } catch (err) {
     showNotice(err.message);
   } finally {
     live.cuePending = false;
-    updateLiveStats();
   }
 }
 
 function updateLiveStats() {
   const live = state.live;
-  const seconds = live.startedAt ? Math.floor((Date.now() - live.startedAt) / 1000) : 0;
-  const minutes = Math.floor(seconds / 60);
-  const rest = String(seconds % 60).padStart(2, "0");
-  $("liveStats").textContent =
-    `${live.cues} cues · ${live.samples.length} frames sampled · ${minutes}:${rest}`;
+  const seconds = live.startedAt ? (Date.now() - live.startedAt) / 1000 : 0;
+  $("statCues").textContent = live.cues;
+  $("statFrames").textContent = live.samples.length;
+  $("statTime").textContent = formatClock(seconds);
 }
 
 async function stopLive(shouldReview) {
@@ -245,15 +582,17 @@ async function stopLive(shouldReview) {
   $("liveVideo").srcObject = null;
   $("liveStart").disabled = false;
   $("liveStop").disabled = true;
-  $("cue").textContent = "Camera off.";
-  updateLiveStats();
+  $("rec").hidden = true;
+  showCue("Camera off. Your session is saved to the report.");
+  setStatus("idle", "Ready");
 
   if (!shouldReview) return;
   if (samples.length < 2) {
     showNotice("Record a little longer. At least 2 frames are needed for a review.");
     return;
   }
-  await runReview("live", evenlySpaced(samples, REVIEW_FRAMES), null);
+  const picks = evenlySpaced(samples, state.config.maxFrames);
+  await runReview("live", picks.map((s) => s.src), picks.map((s) => s.t), null);
 }
 
 $("liveStart").addEventListener("click", startLive);
@@ -263,27 +602,35 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopLive(true);
 });
 
+/* ---------- history ---------- */
+
 async function loadHistory() {
   try {
     const { reviews } = await api("/api/reviews");
     const box = $("history");
     box.replaceChildren();
     if (!reviews.length) {
-      const empty = document.createElement("p");
-      empty.className = "hint";
-      empty.textContent = "No reviews yet.";
-      box.append(empty);
+      box.append(el("p", "hint", "No reviews yet. Completed reports are listed here."));
       return;
     }
     for (const review of reviews) {
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      const source = review.mode === "live" ? "Live" : "Upload";
-      summary.textContent = `${review.created_at} · ${source} · ${review.frame_count} frames` +
-        (review.context ? ` · ${review.context}` : "");
-      const body = document.createElement("div");
-      body.className = "body";
-      body.textContent = review.feedback;
+      const details = el("details", "history-item");
+      const summary = el("summary");
+      const chip = el("span", review.mode === "live" ? "chip live" : "chip", review.mode === "live" ? "Live" : "Upload");
+      const when = el("span", "when", new Date(review.created_at).toLocaleString([], {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }));
+      const frames = el("span", "when", `${review.frame_count} frames`);
+      summary.append(chip, when, frames);
+      if (review.context) summary.append(el("span", "note-text", review.context));
+
+      const body = el("div", "history-body");
+      if (review.report) {
+        renderReport(body, review.report);
+      } else {
+        renderLegacy(body, review.feedback);
+      }
       details.append(summary, body);
       box.append(details);
     }
@@ -292,5 +639,6 @@ async function loadHistory() {
   }
 }
 
+setStatus("idle", "Ready");
 setMode("upload");
-loadHistory();
+loadConfig().then(loadHistory);

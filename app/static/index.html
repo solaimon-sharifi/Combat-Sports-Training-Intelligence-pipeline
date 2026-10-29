@@ -3,76 +3,145 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0e11">
 <title>Film Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="report.css">
 </head>
 <body>
-<div class="tape"></div>
-<main class="app">
-  <header>
-    <p class="eyebrow">Combat Sports Training Intelligence</p>
-    <h1>Film Room</h1>
-    <p class="lede">Coaching notes on your training footage. Upload a clip, or film a roll live on your phone.</p>
-  </header>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 5v14M16.5 5v14" stroke="currentColor" stroke-width="2"/></svg>
+    </span>
+    <div>
+      <p class="wordmark">Film Room</p>
+      <p class="crumb">Combat Sports Training Intelligence</p>
+    </div>
+  </div>
+  <span id="statusPill" class="pill" data-state="idle" role="status">
+    <span class="pill-dot" aria-hidden="true"></span>
+    <span id="statusText">Ready</span>
+  </span>
+</header>
 
-  <form id="gate" class="panel" hidden>
-    <label class="field">
-      <span>Access code</span>
-      <input id="tokenInput" type="password" autocomplete="off">
-    </label>
-    <button class="btn" type="submit">Unlock</button>
-  </form>
+<main class="layout">
+  <section class="capture" aria-label="Capture">
+    <form id="gate" class="card" hidden>
+      <label class="field">
+        <span>Access code</span>
+        <input id="tokenInput" type="password" autocomplete="off">
+      </label>
+      <button class="btn" type="submit">Unlock</button>
+    </form>
 
-  <nav class="modes" aria-label="Review mode">
-    <button type="button" class="mode" data-mode="upload" aria-pressed="true">Upload film</button>
-    <button type="button" class="mode" data-mode="live" aria-pressed="false" hidden>Live camera</button>
-  </nav>
-  <p id="desktopNote" class="hint" hidden>Live camera works on phones and tablets. On this device, upload a clip instead.</p>
+    <div class="card">
+      <div class="card-head">
+        <h2>Capture</h2>
+        <nav class="modes" aria-label="Review mode">
+          <button type="button" class="mode" data-mode="upload" aria-pressed="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4.5 15v3.5h15V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Upload
+          </button>
+          <button type="button" class="mode" data-mode="live" aria-pressed="false" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6.5" width="13" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 11 21.5 7.5v9L15.5 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            Live camera
+          </button>
+        </nav>
+      </div>
+      <p id="desktopNote" class="hint" hidden>Live camera runs on phones and tablets. On this device, upload a clip instead.</p>
 
-  <label class="field">
-    <span>What are you working on? <em>optional</em></span>
-    <textarea id="context" rows="2" maxlength="500" placeholder="e.g. Keeping closed guard posture against a bigger partner"></textarea>
-  </label>
+      <div id="panelUpload" class="stack">
+        <div id="dropzone" class="dropzone">
+          <span class="dropzone-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4.5 15v3.5h15V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="drop-title">Drop a clip here</span>
+          <span id="dropSub" class="drop-sub">MP4 or MOV. Frames are sampled to match the clip length, up to 16.</span>
+          <button id="chooseClip" class="btn btn-ghost btn-sm" type="button">Choose a clip</button>
+        </div>
+        <input id="clipInput" class="offscreen" type="file" accept="video/*" tabindex="-1">
+        <video id="clipVideo" class="offscreen" playsinline muted preload="auto"></video>
 
-  <section id="panelUpload" class="panel">
-    <label class="btn btn-ghost file">
-      Choose a clip
-      <input id="clipInput" type="file" accept="video/*">
-    </label>
-    <p class="hint">MP4 or MOV. Eight frames are sampled from the clip in your browser; the full video is never uploaded.</p>
-    <video id="clipVideo" class="offscreen" playsinline muted preload="auto"></video>
-    <div id="thumbs" class="thumbs"></div>
-    <button id="reviewClip" class="btn" type="button" disabled>Get feedback</button>
+        <div id="progress" class="progress" hidden>
+          <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+          <span id="progressText" class="progress-text"></span>
+        </div>
+        <div id="strip" class="strip" aria-label="Sampled frames"></div>
+
+        <button id="reviewClip" class="btn btn-block" type="button" disabled>Get feedback</button>
+        <p class="hint">The video itself stays on your device. Only the sampled frames are sent for review.</p>
+      </div>
+
+      <div id="panelLive" class="stack" hidden>
+        <div class="viewfinder">
+          <video id="liveVideo" playsinline muted aria-label="Live camera preview"></video>
+          <span class="corner tl" aria-hidden="true"></span>
+          <span class="corner tr" aria-hidden="true"></span>
+          <span class="corner bl" aria-hidden="true"></span>
+          <span class="corner br" aria-hidden="true"></span>
+          <span id="rec" class="rec" hidden><span class="rec-dot" aria-hidden="true"></span>REC</span>
+          <p id="cue" class="cue" aria-live="polite">Point the camera at the mat, then start.</p>
+        </div>
+        <dl class="stats">
+          <div><dt>Cues</dt><dd id="statCues">0</dd></div>
+          <div><dt>Frames</dt><dd id="statFrames">0</dd></div>
+          <div><dt>Elapsed</dt><dd id="statTime">0:00</dd></div>
+        </dl>
+        <div class="row">
+          <button id="liveStart" class="btn" type="button">Start camera</button>
+          <button id="liveStop" class="btn btn-ghost" type="button" disabled>Stop and review</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label class="field">
+        <span>Focus for this review <em>optional</em></span>
+        <textarea id="context" rows="2" maxlength="500" placeholder="e.g. Keeping closed guard posture against a bigger partner"></textarea>
+      </label>
+    </div>
   </section>
 
-  <section id="panelLive" class="panel" hidden>
-    <div class="stage">
-      <video id="liveVideo" playsinline muted></video>
-      <p id="cue" class="cue" aria-live="polite">Start the camera and point it at the mat.</p>
-    </div>
-    <div class="row">
-      <button id="liveStart" class="btn" type="button">Start camera</button>
-      <button id="liveStop" class="btn btn-ghost" type="button" disabled>Stop and review</button>
-    </div>
-    <p id="liveStats" class="hint"></p>
-  </section>
+  <section class="report" aria-label="Report">
+    <div id="notice" class="notice" role="alert" hidden></div>
 
-  <div id="notice" class="notice" role="alert" hidden></div>
-
-  <section id="result" class="panel" hidden>
-    <div class="result-head">
-      <h2>Feedback</h2>
-      <span id="resultMeta" class="meta"></span>
+    <div id="empty" class="card">
+      <div class="card-head">
+        <h2>Your report appears here</h2>
+      </div>
+      <ol class="steps">
+        <li><span class="step-num">1</span><div><strong>Choose footage</strong><span>Upload a clip, or film a roll live on your phone.</span></div></li>
+        <li><span class="step-num">2</span><div><strong>Frames are sampled</strong><span>Frames are spaced across the clip, and the count grows with its length up to 16. Sampling happens in your browser.</span></div></li>
+        <li><span class="step-num">3</span><div><strong>Get coaching notes</strong><span>Each observation cites the frames it is based on, and the report is saved to your history.</span></div></li>
+      </ol>
     </div>
-    <div id="resultBody" class="body"></div>
-  </section>
 
-  <section class="history">
-    <h2>Past reviews</h2>
-    <div id="history"></div>
+    <article id="result" class="card" hidden>
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Coaching report</p>
+          <h2>Feedback</h2>
+        </div>
+        <button id="copyReport" class="btn btn-ghost btn-sm" type="button">Copy</button>
+      </div>
+      <div class="meta-row">
+        <span id="resultSource" class="chip">Uploaded clip</span>
+        <span id="resultMeta" class="meta"></span>
+      </div>
+      <div id="resultCards" class="cards"></div>
+    </article>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>History</h2>
+        <span class="meta">Last 20</span>
+      </div>
+      <div id="history" class="history-list"></div>
+    </section>
   </section>
 </main>
 <script src="app.js"></script>

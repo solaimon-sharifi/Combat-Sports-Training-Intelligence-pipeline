@@ -200,6 +200,47 @@ python app/server.py                          # http://127.0.0.1:5000
   sends eight evenly spaced frames for a full review.
 - Every review is saved to the `film_reviews` table and listed under "Past reviews".
 
+**Structured reports.** Each review returns JSON with a summary, observations
+(each cites frame numbers and carries an Observed, Inferred, or Uncertain
+label), technical findings grouped by area, corrective drills, up to three
+top priorities, and a sampling caveat. The server checks every frame reference
+against the frames it actually sent, and drops references that don't match.
+Priorities and drills appear only when the footage supports them.
+
+**Adaptive sampling.** The browser takes one frame per 8 seconds of clip,
+with at least 4 and at most 16 frames. A 20-second clip gets 4 frames, a
+2-minute clip gets 15, and a 5-minute clip gets 16, spaced about 19 seconds
+apart. Frame times travel with the frames, so every frame shown in a report
+maps to a real moment in the clip.
+
+**Cost.** Each review makes one Claude call. Identical requests (same frames,
+times, and note) are answered from the stored report with no API call. Measured
+on this machine: a 4-frame review used 3,407 input and 593 output tokens, about
+$0.013 at Sonnet 5.5 rates ($2 / $10 per million). Rough estimates, not yet
+measured on real footage: about $0.02 for 8 frames, $0.03 for 16 frames, and
+about $0.005 per live cue. A malformed report is retried once, which can double
+the cost of that one review.
+
+Settings, in addition to the table below:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `REVIEW_MAX_FRAMES` | `16` | Frame cap per review (1 to 24) |
+| `REVIEW_MIN_FRAMES` | `4` | Frame floor per review |
+| `FRAME_INTERVAL_SECONDS` | `8` | Target spacing between frames |
+
+**Tests.**
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest                       # 46 tests, no network, mocked Claude
+RUN_LIVE_API=1 python -m pytest tests/test_live_api.py -s   # one real API call
+```
+
+**Database migrations.** The app upgrades the database on startup.
+`app/migrations.py` tracks progress in `PRAGMA user_version`. Existing reviews
+are kept, and a failed step rolls back.
+
 Settings (environment variables):
 
 | Variable | Default | Purpose |
