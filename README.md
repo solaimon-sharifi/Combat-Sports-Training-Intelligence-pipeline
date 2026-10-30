@@ -190,11 +190,17 @@ the server; the browser only talks to `/api/*`.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...          # or: ant auth login
+export APP_TOKEN=choose-a-long-access-code   # required, at least 12 characters
 python app/server.py                          # http://127.0.0.1:5000
 ```
 
-- **Upload film** samples eight frames from a clip in the browser and sends
-  them for review. The video file itself is never uploaded.
+The server will not start without `APP_TOKEN`. Log in with that code in the
+browser. The session cookie lasts 12 hours, and repeated wrong codes block
+further attempts for 15 minutes.
+
+- **Upload film** samples frames from a clip in the browser and sends them for
+  review. If "Keep this video" is checked, the clip is also stored privately on
+  the server so you can replay it and jump to any frame timestamp in the report.
 - **Live camera** (phones and tablets only) samples a frame every 8 seconds,
   shows a one-line cue from the last three frames, and on "Stop and review"
   sends eight evenly spaced frames for a full review.
@@ -252,11 +258,21 @@ Settings, in addition to the table below:
 | `REVIEW_MIN_FRAMES` | `4` | Frame floor per review |
 | `FRAME_INTERVAL_SECONDS` | `8` | Target spacing between frames |
 
+**Phase 3 security notes.** Login and the access check run before every API route.
+Failed logins are counted before the code is checked, so guessing is limited.
+State-changing requests must carry the `X-Film-Room` header. Session tokens are
+stored only as hashes. Video responses are marked `no-store`. The server refuses
+to start without a strong access code.
+
+**Known limits.** There is one operator and one access code, not user accounts.
+Videos are not encrypted by the app, so rely on full-disk encryption. The
+decoder reads uploaded files with OpenCV, so only log in from devices you trust.
+
 **Tests.**
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                       # 98 tests, no network, mocked Claude
+python -m pytest                       # 187 tests, no network, mocked Claude (real-file checks run when paths are set)
 RUN_LIVE_API=1 python -m pytest tests/test_live_api.py -s   # one real API call
 ```
 
@@ -269,9 +285,56 @@ Settings (environment variables):
 | Variable | Default | Purpose |
 |---|---|---|
 | `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model used for reviews and cues |
-| `APP_TOKEN` | unset | Access code; when set, every `/api/*` call must send it |
+| `APP_TOKEN` | required | Access code (at least 12 characters). Every API call needs a session from logging in |
+| `VIDEO_RETENTION_DAYS` | `7` | Days before a kept video is deleted |
+| `VIDEO_MAX_MB` | `500` | Largest accepted upload |
+| `VIDEO_MAX_SECONDS` | `1800` | Longest accepted clip (30 minutes) |
+| `FILM_ROOM_STORAGE` | `./storage` | Private video directory (git-ignored) |
+| `FILM_ROOM_COOKIE_SECURE` | unset | Set to `1` when served over HTTPS |
 | `RATE_LIMIT_PER_MIN` | `20` | Requests per client IP per minute |
 | `HOST` / `PORT` | `127.0.0.1` / `5000` | Bind address |
+
+**Video storage and privacy.** Kept videos are stored under `storage/videos/`
+with random file names. That directory is outside the web root and has no URL.
+The only way to read a video is the authenticated media route, which checks the
+session and the owner. Each video is deleted 7 days after upload, by an hourly
+sweep and whenever the video list is read. You can delete a video at any time.
+Its report stays in history, but its playback link is removed.
+
+Uploads are accepted only as MP4 or MOV, and only if the file has a valid
+container header, is at most 500 MB and 30 minutes long, and decodes. Clips
+using codecs browsers cannot play (for example MPEG-4 Part 2 or Motion JPEG)
+are refused, with a message to re-export as H.264. HEVC (iPhone) footage is
+accepted, but whether a browser can play it depends on the device.
+
+**Compatibility (tested here).** Tested in Chrome on Windows with real files:
+
+| Format | Result |
+|---|---|
+| H.264 MP4 (`avc1`), 1080x1920, 15 s | Uploads, plays, seeks, pauses and resumes, changes speed, samples frames |
+| HEVC (`hvc1`) MOV from an iPhone, 2160x3840, 49.7 s | Uploads, plays, samples frames |
+| H.264 MOV | Not verified. The only H.264 MOV available is 692 MB, over the 500 MB limit |
+| Other browsers (Firefox, Safari, Android) | Not verified |
+
+Clips using MPEG-4 Part 2 (`mp4v`) or Motion JPEG are refused with a message to
+re-export as H.264. HEVC plays only where the browser can decode it.
+
+**Athlete selection.** Type a description such as "the fighter wearing white."
+The report then states how many sampled frames show the athlete, and lists them,
+as a count taken from the frames rather than from the model's wording. Each
+frame is judged on its own, and the report never claims continuous tracking.
+If the athlete is identified in fewer than two frames, or cannot be followed,
+the report withholds every observation, finding, drill, and priority for them
+and shows a warning instead.
+
+**Deleting reports.** Each report has a Delete button. It asks for confirmation,
+and removes only that report. Deleting every report requires typing
+`DELETE ALL REPORTS`. Neither action touches stored videos. Deleting a video
+keeps its reports but removes their playback links.
+
+**Timestamps.** Each frame reference in a report is a button that moves the
+player to that frame's time in the clip. Times come only from the sampled frames
+and are never extrapolated.
 
 **Live camera needs HTTPS** on a phone: browsers only grant camera access to
 `localhost` or a secure origin. To test on your phone, expose the server through

@@ -10,8 +10,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="report.css">
+<link rel="stylesheet" href="player.css">
+<link rel="stylesheet" href="workspace.css">
 </head>
 <body>
+
+<section id="login" class="login" hidden aria-labelledby="loginTitle">
+  <form id="loginForm" class="card login-card">
+    <p class="eyebrow">Combat Sports Training Intelligence</p>
+    <h1 id="loginTitle" class="login-title">Film Room</h1>
+    <p class="hint">Private footage lives here. Enter your access code to continue. Sessions last 12 hours.</p>
+    <label class="field">
+      <span>Access code</span>
+      <input id="tokenInput" type="password" autocomplete="current-password" required minlength="1">
+    </label>
+    <button class="btn btn-block" type="submit">Unlock</button>
+    <p id="loginError" class="login-error" role="alert" hidden></p>
+  </form>
+</section>
+
+<div id="appShell" hidden>
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
@@ -22,27 +40,22 @@
       <p class="crumb">Combat Sports Training Intelligence</p>
     </div>
   </div>
-  <span id="statusPill" class="pill" data-state="idle" role="status">
-    <span class="pill-dot" aria-hidden="true"></span>
-    <span id="statusText">Ready</span>
-  </span>
+  <div class="topbar-right">
+    <span id="statusPill" class="pill" data-state="idle" role="status">
+      <span class="pill-dot" aria-hidden="true"></span>
+      <span id="statusText">Ready</span>
+    </span>
+    <button id="logoutButton" class="btn btn-ghost btn-sm" type="button">Log out</button>
+  </div>
 </header>
 
 <main class="layout">
   <section class="capture" aria-label="Capture">
-    <form id="gate" class="card" hidden>
-      <label class="field">
-        <span>Access code</span>
-        <input id="tokenInput" type="password" autocomplete="off">
-      </label>
-      <button class="btn" type="submit">Unlock</button>
-    </form>
-
     <div class="card discipline-card">
       <label class="field">
         <span>Discipline</span>
         <select id="discipline" class="select" aria-describedby="disciplineHint">
-          <option value="" disabled selected>Choose a discipline</option>
+          <option value="" selected>Choose a discipline</option>
         </select>
       </label>
       <p id="disciplineHint" class="hint">Pick the sport the footage shows. Feedback is written against that sport only.</p>
@@ -70,11 +83,22 @@
             <svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4.5 15v3.5h15V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </span>
           <span class="drop-title">Drop a clip here</span>
-          <span id="dropSub" class="drop-sub">MP4 or MOV. Frames are sampled to match the clip length, up to 16.</span>
+          <span id="dropSub" class="drop-sub">MP4 or MOV, up to 30 minutes and 500 MB.</span>
           <button id="chooseClip" class="btn btn-ghost btn-sm" type="button">Choose a clip</button>
         </div>
-        <input id="clipInput" class="offscreen" type="file" accept="video/*" tabindex="-1">
+        <input id="clipInput" class="offscreen" type="file" accept="video/mp4,video/quicktime,.mp4,.mov" tabindex="-1">
         <video id="clipVideo" class="offscreen" playsinline muted preload="auto"></video>
+
+        <label class="check">
+          <input id="keepVideo" type="checkbox" checked>
+          <span>Keep this video privately for playback. It is deleted automatically after <span id="retentionDays">7</span> days, or sooner if you delete it.</span>
+        </label>
+
+        <label class="field">
+          <span>Athlete to analyze <em>optional</em></span>
+          <input id="athlete" class="text-input" type="text" maxlength="200" placeholder="e.g. the fighter wearing white">
+          <span class="hint">Describe the person to focus on. Feedback is not attributed to anyone the model cannot identify.</span>
+        </label>
 
         <div id="progress" class="progress" hidden>
           <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
@@ -83,7 +107,7 @@
         <div id="strip" class="strip" aria-label="Sampled frames"></div>
 
         <button id="reviewClip" class="btn btn-block" type="button" disabled>Get feedback</button>
-        <p class="hint">The video itself stays on your device. Only the sampled frames are sent for review.</p>
+        <p class="hint">Sampled frames are sent to the Claude API for review. The full video is stored only if you keep it, and only on this server.</p>
       </div>
 
       <div id="panelLive" class="stack" hidden>
@@ -105,6 +129,7 @@
           <button id="liveStart" class="btn" type="button">Start camera</button>
           <button id="liveStop" class="btn btn-ghost" type="button" disabled>Stop and review</button>
         </div>
+        <p class="hint">Live sessions are not stored as video. Their report shows frame times but no playback.</p>
       </div>
     </div>
 
@@ -114,9 +139,64 @@
         <textarea id="context" rows="2" maxlength="500" placeholder="e.g. Keeping closed guard posture against a bigger partner"></textarea>
       </label>
     </div>
+
+    <section class="card" aria-labelledby="videosTitle">
+      <div class="card-head">
+        <h2 id="videosTitle">Stored videos</h2>
+        <span class="meta">Deleted after <span class="retention-inline">7</span> days</span>
+      </div>
+      <div id="videoList" class="video-list"></div>
+    </section>
+
+    <section class="card privacy" aria-labelledby="privacyTitle">
+      <h2 id="privacyTitle">Privacy and retention</h2>
+      <ul class="privacy-list">
+        <li>Kept videos are stored privately on this server, are never public, and cannot be opened by address alone.</li>
+        <li>Each kept video is deleted automatically <span class="retention-inline">7</span> days after upload, or sooner if you delete it. Deleting a video keeps its reports, but their playback links stop working.</li>
+        <li>Reports stay in your history until you delete them. Nothing deletes them automatically. You can delete one report, or all reports after a confirmation.</li>
+        <li>Frames sampled from a clip are sent to the Claude API for review. Only the frames, the frame times, and your notes are sent. Anthropic's API data terms apply to them.</li>
+        <li>Live camera sessions send frames only and are not stored as video.</li>
+      </ul>
+    </section>
   </section>
 
+    <section id="playerCard" class="card player-card" aria-label="Video player" hidden>
+      <div class="card-head">
+        <div class="player-title">
+          <p class="eyebrow">Clip</p>
+          <h2 id="playerName">Clip</h2>
+        </div>
+        <button id="deleteVideo" class="btn btn-ghost btn-sm" type="button">Delete video</button>
+      </div>
+      <div class="player">
+        <video id="player" playsinline preload="metadata" aria-label="Stored training clip"></video>
+        <div class="player-bar" role="group" aria-label="Playback controls">
+          <button id="playPause" class="btn btn-sm" type="button" aria-label="Play">Play</button>
+          <button id="replay" class="btn btn-ghost btn-sm" type="button" aria-label="Replay from the start">Replay</button>
+          <button id="skipBack" class="btn btn-ghost btn-sm" type="button" aria-label="Back 5 seconds">-5 s</button>
+          <button id="skipForward" class="btn btn-ghost btn-sm" type="button" aria-label="Forward 5 seconds">+5 s</button>
+          <label class="speed">
+            <span class="sr-only">Playback speed</span>
+            <select id="speed" class="select select-sm">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </label>
+        </div>
+        <div class="seek-row">
+          <span id="timeNow" class="time">0:00.0</span>
+          <input id="seek" class="seek" type="range" min="0" max="0" step="0.05" value="0" aria-label="Seek">
+          <span id="timeTotal" class="time">0:00.0</span>
+        </div>
+        <p id="playerNote" class="hint"></p>
+      </div>
+    </section>
+
   <section class="report" aria-label="Report">
+
     <div id="notice" class="notice" role="alert" hidden></div>
 
     <div id="empty" class="card">
@@ -126,7 +206,7 @@
       <ol class="steps">
         <li><span class="step-num">1</span><div><strong>Choose footage</strong><span>Upload a clip, or film a roll live on your phone.</span></div></li>
         <li><span class="step-num">2</span><div><strong>Frames are sampled</strong><span>Frames are spaced across the clip, and the count grows with its length up to 16. Sampling happens in your browser.</span></div></li>
-        <li><span class="step-num">3</span><div><strong>Get coaching notes</strong><span>Each observation cites the frames it is based on, and the report is saved to your history.</span></div></li>
+        <li><span class="step-num">3</span><div><strong>Get coaching notes</strong><span>Each observation cites frames, and each frame time can be clicked to jump the player to that moment.</span></div></li>
       </ol>
     </div>
 
@@ -145,15 +225,33 @@
       <div id="resultCards" class="cards"></div>
     </article>
 
-    <section class="card">
+    <section class="card history-card" aria-labelledby="historyTitle">
       <div class="card-head">
-        <h2>History</h2>
-        <span class="meta">Last 20</span>
+        <div>
+          <h2 id="historyTitle">History</h2>
+          <p class="hint">Your last 20 reports. Deleting a report does not delete its video.</p>
+        </div>
+        <button id="deleteAllReports" class="btn btn-danger btn-sm" type="button">Delete all reports</button>
       </div>
       <div id="history" class="history-list"></div>
     </section>
   </section>
 </main>
+</div>
+<dialog id="confirmDialog" class="dialog" aria-labelledby="confirmTitle">
+  <form id="confirmForm" method="dialog" class="dialog-form">
+    <h2 id="confirmTitle">Confirm</h2>
+    <p id="confirmBody" class="hint"></p>
+    <label id="confirmPhraseLabel" class="field" hidden>
+      <span id="confirmPhraseText"></span>
+      <input id="confirmPhrase" class="text-input" type="text" autocomplete="off" spellcheck="false">
+    </label>
+    <div class="dialog-actions">
+      <button id="confirmCancel" class="btn btn-ghost" type="button" value="cancel">Cancel</button>
+      <button id="confirmOk" class="btn btn-danger" type="submit" value="ok">Delete</button>
+    </div>
+  </form>
+</dialog>
 <script src="app.js"></script>
 </body>
 </html>

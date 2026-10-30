@@ -1,0 +1,153 @@
+/* Workspace layout: capture, player, and report. Loaded last so it overrides earlier layout rules.
+
+   Phones: one column. Capture, then the player, then the report, so the player sits
+   above the feedback.
+   Medium screens: the player sits above the report on the right.
+   Wide screens: capture, player, and report side by side while the player is open. */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1320px;
+}
+
+.capture,
+.report,
+.player-card {
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-areas: "capture report";
+    align-items: start;
+  }
+  .layout.has-player {
+    grid-template-areas:
+      "capture stage"
+      "capture report";
+    grid-template-rows: auto 1fr;
+  }
+  .capture { grid-area: capture; position: sticky; top: 88px; max-height: calc(100vh - 108px); overflow-y: auto; padding-right: 4px; }
+  .report { grid-area: report; }
+  .player-card {
+    grid-area: stage;
+    position: sticky;
+    top: 88px;
+    align-self: start;
+    max-height: calc(100vh - 108px);
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 1280px) {
+  .layout.has-player {
+    grid-template-columns: 340px minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-areas: "capture stage report";
+    grid-template-rows: auto;
+  }
+  .layout.has-player .capture { position: sticky; }
+}
+
+.player-card .player video {
+  max-height: 48vh;
+}
+
+/* Timestamps read like buttons, not like labels. */
+.ref-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.ref-link::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 6px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.ref-link:hover { border-color: var(--accent); }
+
+/* The observation or finding behind a timestamp that was just clicked. */
+.is-source {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--accent);
+  animation: source-flash 0.9s ease-out;
+}
+@keyframes source-flash {
+  from { box-shadow: inset 0 0 0 2px var(--accent); }
+  to { box-shadow: inset 0 0 0 1px var(--accent); }
+}
+
+.athlete-warning {
+  background: var(--warm-soft);
+}
+.athlete-caution {
+  font-weight: 600;
+}
+.athlete-banner .frame-refs { margin-top: 4px; }
+
+/* Destructive actions and their confirmation dialog. */
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: none;
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, #000);
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+}
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.dialog-form {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+.dialog-form h2 {
+  font-size: 18px;
+}
+.dialog-form .hint {
+  font-size: 14px;
+  color: var(--text-2);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-card .card-head .hint {
+  margin-top: 4px;
+}
+
+.player-card .card-head {
+  align-items: flex-start;
+}

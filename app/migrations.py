@@ -22,6 +22,31 @@ MIGRATIONS = {
         "CREATE INDEX IF NOT EXISTS idx_film_reviews_cache "
         "ON film_reviews(request_hash, discipline, model, report_version, prompt_version)",
     ],
+    3: [
+        "CREATE TABLE IF NOT EXISTS videos ("
+        " video_id INTEGER PRIMARY KEY,"
+        " owner TEXT NOT NULL,"
+        " storage_name TEXT NOT NULL UNIQUE,"
+        " display_name TEXT NOT NULL,"
+        " mime TEXT NOT NULL,"
+        " size_bytes INTEGER NOT NULL,"
+        " duration_seconds REAL NOT NULL,"
+        " sha256 TEXT NOT NULL,"
+        " created_at TEXT NOT NULL,"
+        " expires_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_videos_expiry ON videos(expires_at)",
+        "CREATE TABLE IF NOT EXISTS auth_sessions ("
+        " session_hash TEXT PRIMARY KEY,"
+        " owner TEXT NOT NULL,"
+        " created_at TEXT NOT NULL,"
+        " expires_at TEXT NOT NULL)",
+        "ALTER TABLE film_reviews ADD COLUMN video_id INTEGER",
+        "ALTER TABLE film_reviews ADD COLUMN athlete_description TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_film_reviews_video ON film_reviews(video_id)",
+    ],
+    4: [
+        "ALTER TABLE videos ADD COLUMN codec TEXT",
+    ],
 }
 
 

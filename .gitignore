@@ -6,3 +6,11 @@ exports/*.csv
 exports/plots/*.png
 powerbi/*.pbix
 film_reviews/
+storage/
+*.mp4
+*.mov
+*.MOV
+*.MP4
+*.webm
+*.m4v
+*.db

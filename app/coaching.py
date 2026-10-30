@@ -15,7 +15,7 @@ REVIEW_MAX_TOKENS = 4000
 CUE_MAX_TOKENS = 120
 
 
-def request_fingerprint(model, discipline, frames_b64, frame_times, context):
+def request_fingerprint(model, discipline, frames_b64, frame_times, context, athlete=""):
     """Identifies everything that changes a report. Two requests share a cached
     report only when every input here matches."""
     material = {
@@ -25,6 +25,7 @@ def request_fingerprint(model, discipline, frames_b64, frame_times, context):
         "prompt_version": prompt_version(discipline),
         "frame_times": frame_times,
         "context": context,
+        "athlete": athlete,
         "frames": [hashlib.sha256(data.encode()).hexdigest() for data in frames_b64],
     }
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
@@ -42,10 +43,10 @@ def frame_content(frames_b64, frame_times):
     return content
 
 
-def request_report(client, model, frames_b64, frame_times, discipline, context):
+def request_report(client, model, frames_b64, frame_times, discipline, context, athlete=""):
     """One structured-output call. Returns (text, usage) or raises a typed error."""
     content = frame_content(frames_b64, frame_times)
-    content.append({"type": "text", "text": build_prompt(discipline, len(frames_b64), context)})
+    content.append({"type": "text", "text": build_prompt(discipline, len(frames_b64), context, athlete)})
     response = client.messages.create(
         model=model,
         max_tokens=REVIEW_MAX_TOKENS,
@@ -60,13 +61,13 @@ def request_report(client, model, frames_b64, frame_times, discipline, context):
     return text, response.usage
 
 
-def generate_report(client, model, frames_b64, frame_times, discipline, context, attempts=2):
+def generate_report(client, model, frames_b64, frame_times, discipline, context, athlete="", attempts=2):
     """Build a validated report. Malformed output is retried, up to `attempts` calls."""
     last_error = None
     for attempt in range(1, attempts + 1):
-        text, usage = request_report(client, model, frames_b64, frame_times, discipline, context)
+        text, usage = request_report(client, model, frames_b64, frame_times, discipline, context, athlete)
         try:
-            return parse_report(text, frame_times, discipline), usage
+            return parse_report(text, frame_times, discipline, athlete), usage
         except ReportError as exc:
             log.warning("Report failed validation on attempt %s: %s", attempt, exc)
             last_error = exc

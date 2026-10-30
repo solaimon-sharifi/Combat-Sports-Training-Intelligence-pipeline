@@ -1,0 +1,225 @@
+/* Login, video player, stored videos, privacy, and clickable timestamps. Uses the app's tokens. */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- login ---------- */
+
+.login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  padding: 28px;
+}
+.login-title {
+  margin: 6px 0 0;
+  font: 800 52px / 0.9 "Big Shoulders Display", sans-serif;
+  text-transform: uppercase;
+}
+.login-error {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--danger);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  font: 14.5px "IBM Plex Sans", sans-serif;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.retention-inline { font-variant-numeric: tabular-nums; }
+
+/* ---------- privacy ---------- */
+
+.privacy h2 { font-size: 15px; }
+.privacy-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* ---------- stored videos ---------- */
+
+.video-list {
+  display: grid;
+  gap: 8px;
+}
+.video-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.video-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.video-meta {
+  font: 500 11.5px "IBM Plex Mono", monospace;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.video-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ---------- player ---------- */
+
+.player-card {
+  position: sticky;
+  top: 88px;
+  z-index: 2;
+  gap: 12px;
+}
+.player-title { min-width: 0; }
+.player-title h2 {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player {
+  display: grid;
+  gap: 10px;
+}
+.player video {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  border-radius: 12px;
+  background: #000;
+}
+.player-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.player-bar .btn-sm { min-width: 62px; }
+.speed { margin-left: auto; }
+.select-sm {
+  width: auto;
+  min-height: 34px;
+  padding-right: 30px;
+  font-size: 13px;
+}
+.seek-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.time {
+  font: 500 12px "IBM Plex Mono", monospace;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.seek {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.player-card .hint:empty { display: none; }
+
+/* ---------- clickable frame references ---------- */
+
+.ref-link {
+  cursor: pointer;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent);
+  font: 500 11.5px "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+}
+.ref-link:hover { background: var(--accent-soft); }
+.ref-link[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.ref-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- athlete banner ---------- */
+
+.athlete-banner {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--warm-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.athlete-banner strong { font-weight: 600; }
+.athlete-banner p { margin: 0; }
+.athlete-identified {
+  background: var(--accent-soft);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .player-card {
+    position: static;
+  }
+}
+@media (max-width: 560px) {
+  .seek-row { grid-template-columns: auto 1fr auto; gap: 8px; }
+  .speed { margin-left: 0; }
+}

@@ -6,7 +6,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "app"))
 
-SERVER_MODULES = ("server", "coaching", "reports", "disciplines", "migrations")
+SERVER_MODULES = ("server", "coaching", "reports", "disciplines", "migrations", "auth", "storage")
+TEST_TOKEN = "test-access-code-123"
 
 
 class FakeBlock:
@@ -64,6 +65,9 @@ def valid_report_text(discipline="bjj", evidence_status="sufficient"):
     return json.dumps({
         "evidence_status": evidence_status,
         "evidence_note": "Partner partly hidden in frame 3." if evidence_status != "sufficient" else "",
+        "athlete_status": "not_requested",
+        "athlete_frames": [],
+        "athlete_note": "No athlete was named, so the observations describe the person shown.",
         "summary": "Visible posture is reasonable in the first frames, with a gap in frame 3.",
         "observations": [
             {"description": "The athlete's head and shoulders are visible in frames 1 and 2.", "frames": [1, 2], "confidence": "observed"},
@@ -99,8 +103,9 @@ def valid_report_text(discipline="bjj", evidence_status="sufficient"):
 def server(tmp_path, monkeypatch):
     """Import a fresh server module pointed at a temporary database."""
     monkeypatch.setenv("FILM_ROOM_DB", str(tmp_path / "test.db"))
+    monkeypatch.setenv("FILM_ROOM_STORAGE", str(tmp_path / "storage"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-SENTINEL-do-not-leak")
-    monkeypatch.delenv("APP_TOKEN", raising=False)
+    monkeypatch.setenv("APP_TOKEN", TEST_TOKEN)
     monkeypatch.setenv("RATE_LIMIT_PER_MIN", "1000")
     monkeypatch.setenv("REVIEW_MAX_FRAMES", "16")
     monkeypatch.setenv("REVIEW_MIN_FRAMES", "4")
@@ -109,8 +114,19 @@ def server(tmp_path, monkeypatch):
         sys.modules.pop(name, None)
     import server as module
 
+    from flask.app import Flask
+
     module.app.config["TESTING"] = True
     module._client = None
+    module.raw_client = lambda: Flask.test_client(module.app)
+
+    def authed_client():
+        client = Flask.test_client(module.app)
+        client.environ_base["HTTP_X_APP_TOKEN"] = TEST_TOKEN
+        client.environ_base["HTTP_X_FILM_ROOM"] = "1"
+        return client
+
+    monkeypatch.setattr(module.app, "test_client", authed_client)
     yield module
     for name in SERVER_MODULES:
         sys.modules.pop(name, None)
