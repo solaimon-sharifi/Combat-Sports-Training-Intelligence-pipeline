@@ -1,0 +1,247 @@
+/* Training view. Built on the same tokens as the film room, so both themes apply.
+   Phones: one column. Wide screens: two columns, with wide cards spanning both. */
+
+[hidden] { display: none !important; }
+
+.views {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.view-tab {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.view-tab[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.training {
+  display: grid;
+  gap: 20px;
+  max-width: 1320px;
+}
+.training-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.training-grid > .card { min-width: 0; }
+
+.training-filters { display: grid; gap: 8px; }
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.filter-row .field { min-width: 0; flex: 1 1 160px; }
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.stack { display: grid; gap: 12px; }
+.training-grid .hint { margin: 4px 0 0; }
+
+/* Sessions by sport: CSS bars, no chart library. */
+.bars { display: grid; gap: 10px; margin-top: 12px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 140px) minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+.bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--warm));
+}
+.bar-value { text-align: right; font-family: "IBM Plex Mono", monospace; color: var(--text-2); }
+
+/* Status badges use the same colours throughout: warm for patterns, neutral otherwise. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge[data-status="multi_day"] { background: var(--warm-soft); color: var(--warm); }
+.badge[data-status="multi_session"] { background: var(--accent-soft); color: var(--accent); }
+.badge.reliable { background: var(--accent-soft); color: var(--accent); }
+.badge.caution { background: var(--warm-soft); color: var(--warm); }
+.state-detected { background: var(--warm-soft); color: var(--warm); }
+.state-not_detected { background: var(--accent-soft); color: var(--accent); }
+
+.issue, .drill-card, .compare-card, .session-row {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.issue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.issue-title { font-size: 15px; }
+.issue-counts { margin: 0; font-size: 14px; }
+.session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.session-row .hint { margin: 0; }
+
+.notice-inline {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--warm-soft);
+  font-size: 14px;
+}
+
+/* Comparison: two sides, stacked on phones. */
+.compare-head, .compare-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.compare-session, .compare-side {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  align-content: start;
+}
+.compare-session p, .compare-side p { margin: 0; }
+.compare-finding {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.compare-finding p { margin: 0; font-size: 14px; }
+.frame-refs { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Drill library. */
+.drill-details summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+.drill-details p { margin: 6px 0 0; font-size: 14px; }
+.plain-list { margin: 0; padding-left: 18px; font-size: 14px; }
+.practice {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.practice p { margin: 0; }
+.practice-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.practice-form {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.practice-form .text-input { min-width: 0; }
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+.pager button:disabled { opacity: 0.45; cursor: default; }
+
+@media (min-width: 720px) {
+  .compare-head, .compare-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .practice-form { grid-template-columns: minmax(0, 150px) minmax(0, 1fr) auto; align-items: center; }
+}
+
+@media (min-width: 900px) {
+  .training-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .training-grid > .wide { grid-column: 1 / -1; }
+  .training-grid > .card:not(.wide) { min-width: 0; }
+}
+
+@media (max-width: 560px) {
+  .views { width: 100%; }
+  .view-tab { flex: 1 1 0; padding: 0 8px; }
+  .topbar-right { flex-wrap: wrap; }
+  .bar-row { grid-template-columns: minmax(0, 1fr) 28px; }
+  .bar-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
+  .filter-row .field, .filter-row .btn { flex-basis: 100%; }
+}
+
+/* Plain-language helpers. */
+.hint.empty { padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.rules { margin-top: 8px; font-size: 14px; }
+.rules summary { cursor: pointer; color: var(--accent); }
+.rules .plain-list { margin-top: 8px; display: grid; gap: 4px; }
+.caveats { color: var(--text-2); }
+.limits { color: var(--text-2); font-size: 13px; }
+.compare-group { display: grid; gap: 12px; }
+.compare-group-title { margin: 8px 0 0; font-size: 14px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Keyboard users need a visible focus ring everywhere in the training view and the nav. */
+.training :focus-visible,
+.views :focus-visible,
+.topbar :focus-visible,
+#result:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Phones: the view switch takes its own full-width row under the brand, so it is never squeezed. */
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar-right { width: 100%; justify-content: space-between; }
+  .views { order: 3; width: 100%; }
+  .views .view-tab { flex: 1 1 0; min-height: 40px; }
+}
+
+#trainingStatus[data-state="error"] { color: var(--danger); font-weight: 600; }

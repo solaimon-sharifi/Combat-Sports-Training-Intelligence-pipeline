@@ -182,6 +182,9 @@ def validate_report(data, frame_times, discipline, athlete=""):
 
     supported_areas = {f["area"] for f in findings if f["confidence"] in ("observed", "inferred")}
 
+    # An area with a finding was judged by definition, so it is added even if the model left it out.
+    judged = {a for a in data["judged_areas"] if a in areas} | {f["area"] for f in findings}
+
     drills = []
     for item in data["drills"]:
         if item.get("addresses") not in areas:
@@ -233,6 +236,7 @@ def validate_report(data, frame_times, discipline, athlete=""):
             for i, t in enumerate(frame_times, start=1)
         ],
         "observations": observations,
+        "judged_areas": sorted(judged) if evidence_status != "insufficient" else [],
         "technical_findings": findings,
         "drills": drills,
         "top_priorities": priorities,

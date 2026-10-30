@@ -32,16 +32,17 @@ import threading
 import time
 from collections import defaultdict, deque
 from contextlib import closing
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import anthropic
 from flask import Flask, g, jsonify, request, send_file, send_from_directory
 
+import analytics
 import auth
 import coaching
 import storage
-from disciplines import REPORT_VERSION, config_payload, prompt_version, validate_discipline
+from disciplines import CATEGORIES, DISCIPLINES, REPORT_VERSION, config_payload, prompt_version, validate_discipline
 from migrations import migrate
 from reports import ModelRefused, ReportError, to_plain_text, validate_frame_times
 
@@ -259,8 +260,8 @@ def save_review(mode, context, frame_times, report, request_hash, usage, prompt,
         cur = conn.execute(
             "INSERT INTO film_reviews (created_at, mode, context, frame_count, feedback, report_json, "
             "report_version, request_hash, frame_times_json, model, input_tokens, output_tokens, "
-            "discipline, prompt_version, video_id, athlete_description) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "discipline, prompt_version, video_id, athlete_description, judged_areas_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now().isoformat(timespec="seconds"),
                 mode,
@@ -278,8 +279,10 @@ def save_review(mode, context, frame_times, report, request_hash, usage, prompt,
                 prompt,
                 video_id,
                 athlete or None,
+                json.dumps(report["judged_areas"]) if "judged_areas" in report else None,
             ),
         )
+        analytics.store_rows(conn, cur.lastrowid, report, report["discipline"])
         conn.commit()
         return cur.lastrowid
 
@@ -429,6 +432,7 @@ def video_media(video_id):
 def remove_review(review_id):
     """Deletes one report. Its stored video, if any, and every other report are left alone."""
     with closing(db()) as conn:
+        analytics.delete_rows(conn, review_id)
         cur = conn.execute("DELETE FROM film_reviews WHERE review_id = ?", (review_id,))
         conn.commit()
         removed = cur.rowcount
@@ -444,6 +448,8 @@ def remove_all_reviews():
     if body.get("confirm") != DELETE_ALL_PHRASE:
         return error(f"Type {DELETE_ALL_PHRASE} to confirm.", 400)
     with closing(db()) as conn:
+        conn.execute("DELETE FROM review_findings")
+        conn.execute("DELETE FROM review_drills")
         cur = conn.execute("DELETE FROM film_reviews")
         conn.commit()
         removed = cur.rowcount
@@ -498,6 +504,179 @@ def live_cue():
     except anthropic.APIError as exc:
         return ai_failure(exc)
     return jsonify(cue=cue)
+
+
+def date_arg(name):
+    """Returns the YYYY-MM-DD query value, None when absent, or raises ValueError when malformed."""
+    value = request.args.get(name, "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"{name} must be a date as YYYY-MM-DD.")
+
+
+def filter_args():
+    """Discipline and date filters shared by every analytics route. Raises ValueError when malformed."""
+    discipline = request.args.get("discipline", "").strip() or None
+    if discipline and discipline not in DISCIPLINES:
+        raise ValueError("Unknown discipline.")
+    start, end = date_arg("start"), date_arg("end")
+    if start and end and start > end:
+        raise ValueError("The start date is after the end date.")
+    return {"discipline": discipline, "start": start, "end": end}
+
+
+@app.get("/api/analytics/dashboard")
+def analytics_dashboard():
+    try:
+        filters = filter_args()
+    except ValueError as exc:
+        return error(str(exc), 400)
+    with closing(db()) as conn:
+        storage.purge_expired(conn)
+        return jsonify(analytics.dashboard(conn, g.owner, filters["discipline"], filters["start"], filters["end"]))
+
+
+@app.get("/api/analytics/issues")
+def analytics_issues():
+    try:
+        filters = filter_args()
+    except ValueError as exc:
+        return error(str(exc), 400)
+    category = request.args.get("category", "").strip() or None
+    if category and category not in CATEGORIES:
+        return error("Unknown technique category.", 400)
+    with closing(db()) as conn:
+        issues = analytics.recurring_issues(conn, filters["discipline"], filters["start"], filters["end"])
+    if category:
+        issues = [item for item in issues if item["category"] == category]
+    return jsonify(issues=issues, categories=CATEGORIES)
+
+
+@app.get("/api/analytics/compare")
+def analytics_compare():
+    try:
+        first, second = int(request.args.get("first", "")), int(request.args.get("second", ""))
+    except ValueError:
+        return error("Choose two sessions to compare.", 400)
+    with closing(db()) as conn:
+        storage.purge_expired(conn)
+        try:
+            return jsonify(analytics.compare(conn, g.owner, first, second))
+        except LookupError as exc:
+            return error(str(exc), 404)
+        except ValueError as exc:
+            return error(str(exc), 400)
+
+
+@app.get("/api/analytics/drills")
+def analytics_drills():
+    try:
+        filters = filter_args()
+    except ValueError as exc:
+        return error(str(exc), 400)
+    with closing(db()) as conn:
+        return jsonify(analytics.drill_library(conn, filters["discipline"], filters["start"], filters["end"]))
+
+
+@app.post("/api/drill-practice")
+def log_practice():
+    body = request.get_json(silent=True) or {}
+    drill_key = str(body.get("drill_key") or "").strip()
+    note = str(body.get("note") or "").strip()
+    if not drill_key or len(drill_key) > 300:
+        return error("Choose a drill to log.", 400)
+    if len(note) > 300:
+        return error("Keep the note under 300 characters.", 400)
+    try:
+        practiced_on = datetime.strptime(str(body.get("practiced_on") or "").strip() or date.today().isoformat(),
+                                         "%Y-%m-%d").date()
+    except ValueError:
+        return error("The practice date must be YYYY-MM-DD.", 400)
+    if practiced_on > date.today() or practiced_on.year < 2000:
+        return error("The practice date must be today or earlier.", 400)
+    with closing(db()) as conn:
+        try:
+            practice_id = analytics.add_practice(conn, drill_key, practiced_on.isoformat(), note)
+        except LookupError as exc:
+            return error(str(exc), 404)
+        conn.commit()
+    return jsonify(ok=True, id=practice_id), 201
+
+
+@app.delete("/api/drill-practice/<int:practice_id>")
+def remove_practice(practice_id):
+    with closing(db()) as conn:
+        removed = analytics.delete_practice(conn, practice_id)
+        conn.commit()
+    if not removed:
+        return error("Practice entry not found.", 404)
+    return jsonify(ok=True, deleted=1)
+
+
+@app.get("/api/drill-practice")
+def practice_list():
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        return error("Page must be a number.", 400)
+    page_size = 50
+    with closing(db()) as conn:
+        return jsonify(analytics.practice_history(conn, limit=page_size, offset=(page - 1) * page_size)
+                       | {"page": page, "page_size": page_size})
+
+
+@app.get("/api/history")
+def history_list():
+    try:
+        filters = filter_args()
+    except ValueError as exc:
+        return error(str(exc), 400)
+    category = request.args.get("category", "").strip() or None
+    if category and category not in CATEGORIES:
+        return error("Unknown technique category.", 400)
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        return error("Page must be a number.", 400)
+    filters.update(
+        text=request.args.get("q", "").strip()[:200] or None,
+        category=category,
+        drill=request.args.get("drill", "").strip()[:200] or None,
+        recurring=request.args.get("recurring") == "1",
+    )
+    page_size = 25
+    with closing(db()) as conn:
+        storage.purge_expired(conn)
+        result = analytics.history(conn, g.owner, filters, limit=page_size, offset=(page - 1) * page_size)
+    return jsonify(dict(result, page=page, page_size=page_size))
+
+
+@app.get("/api/reviews/<int:review_id>")
+def review_detail(review_id):
+    with closing(db()) as conn:
+        storage.purge_expired(conn)
+        row = conn.execute(
+            "SELECT r.review_id AS id, r.created_at, r.mode, r.context, r.frame_count, r.feedback, "
+            "r.report_json, r.discipline, r.video_id, r.athlete_description, "
+            "(v.video_id IS NOT NULL) AS video_available "
+            "FROM film_reviews r LEFT JOIN videos v ON v.video_id = r.video_id AND v.owner = ? "
+            "WHERE r.review_id = ?",
+            (g.owner, review_id),
+        ).fetchone()
+    if row is None:
+        return error("Report not found.", 404)
+    item = dict(row)
+    try:
+        item["report"] = json.loads(item.pop("report_json")) if item.get("report_json") else None
+    except (TypeError, ValueError):
+        item.pop("report_json", None)
+        item["report"] = None
+    item["discipline_label"] = coaching.discipline_label(item.get("discipline"))
+    item["video_available"] = bool(item["video_available"])
+    return jsonify(item)
 
 
 @app.get("/api/reviews")

@@ -14,3 +14,15 @@ storage/
 *.webm
 *.m4v
 *.db
+
+# Phase 4 hardening: databases, backups and private footage never enter Git.
+db/
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.bak
+.env
+.env.*
+storage/

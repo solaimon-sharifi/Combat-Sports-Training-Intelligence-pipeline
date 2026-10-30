@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 
-from disciplines import DISCIPLINES, REPORT_VERSION, build_prompt, live_cue_prompt, prompt_version, report_schema
+from disciplines import DISCIPLINES, REPORT_VERSION, build_prompt, label_for, live_cue_prompt, prompt_version, report_schema
 from reports import ModelRefused, ReportError, parse_report
 
 log = logging.getLogger("filmroom.coaching")
@@ -94,4 +94,4 @@ def live_cue(client, model, frames_b64, discipline):
 
 
 def discipline_label(key):
-    return DISCIPLINES[key]["label"] if key in DISCIPLINES else "Unspecified"
+    return label_for(key)

@@ -90,7 +90,7 @@
 }
 .video-item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 12px;
   align-items: center;
   padding: 12px 14px;
@@ -112,7 +112,13 @@
 }
 .video-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+}
+@media (max-width: 560px) {
+  .video-item { grid-template-columns: minmax(0, 1fr); }
+  .video-actions { justify-content: flex-start; }
 }
 
 /* ---------- player ---------- */

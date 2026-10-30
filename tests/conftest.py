@@ -6,7 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "app"))
 
-SERVER_MODULES = ("server", "coaching", "reports", "disciplines", "migrations", "auth", "storage")
+SERVER_MODULES = ("server", "coaching", "reports", "disciplines", "migrations", "analytics", "auth", "storage")
 TEST_TOKEN = "test-access-code-123"
 
 
@@ -65,6 +65,7 @@ def valid_report_text(discipline="bjj", evidence_status="sufficient"):
     return json.dumps({
         "evidence_status": evidence_status,
         "evidence_note": "Partner partly hidden in frame 3." if evidence_status != "sufficient" else "",
+        "judged_areas": [] if insufficient else [area],
         "athlete_status": "not_requested",
         "athlete_frames": [],
         "athlete_note": "No athlete was named, so the observations describe the person shown.",

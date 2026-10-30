@@ -272,7 +272,7 @@ decoder reads uploaded files with OpenCV, so only log in from devices you trust.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                       # 187 tests, no network, mocked Claude (real-file checks run when paths are set)
+python -m pytest                       # 303 tests, no network, mocked Claude (real-file checks run when paths are set)
 RUN_LIVE_API=1 python -m pytest tests/test_live_api.py -s   # one real API call
 ```
 
@@ -342,6 +342,41 @@ an HTTPS tunnel, or deploy it behind HTTPS. If you deploy it publicly, set
 `APP_TOKEN` so strangers can't spend your API credits. The rate limiter keys on
 the client IP, which behind a tunnel is the tunnel's address, so it becomes a
 shared limit for everyone using that tunnel.
+
+### Training analytics
+
+The **Training** view (top bar) summarizes saved reports only. Every number is computed from the reports you have saved, not from the footage again. Nothing here measures athletic performance or shows improvement.
+
+Counting rules (also shown in the app under "How counts work"):
+
+- A session is one saved report. Repeating a cached request does not create one.
+- Only observed and inferred findings count. Uncertain findings are never counted.
+- Several findings in one category within one session count as one session.
+- **Detected across multiple sessions**: detected in at least 2 sessions.
+- **Detected across multiple sessions and days**: detected in at least 3 sessions on at least 2 calendar days.
+- **Not detected**: nothing was detected in a session that assessed the area. This is not evidence the area is fixed.
+- A session counts as having assessed an area only when its report recorded that area. Reports saved before REPORT_VERSION 6 did not record this, so for them "not detected" is unknown and is never counted as clear.
+
+Views:
+
+- **Overview**: saved sessions by sport and date range.
+- **Detected across multiple sessions**: categories that meet the rules above.
+- **Recurring issues**: every category with its counts, observed and inferred split, and status. A category filter is available.
+- **Compare**: two sessions from the same sport. Categories are grouped as detected in both, detected only in the earlier session, detected only in the newer session, assessed in both but not detected, or cannot be compared. Each category is marked comparable or "interpret with care", with the reasons (limited evidence, athlete not confirmed, different athlete named, sampled spans or clip lengths that differ). Links open each report and its clip at the frame concerned.
+- **Drill library**: drills recommended by saved reports in the current filters, with the findings they address. Each drill's findings come from the reports that recommend it.
+- **Practice history**: days you logged practicing a drill. A log records that a day happened. It is not evidence that technique improved. Entries survive report deletion and show whether a saved report still recommends the drill.
+- **History**: search by text, category, drill, recurring issues and date, with paging. Open, compare and delete are available for each session.
+
+Limits:
+
+- Footage quality is not scored. Each report samples a few frames, so anything between frames is not assessed.
+- A pattern across saved reports is a pattern in the records, not a diagnosis. The same clip analysed twice counts as two sessions.
+- Practice logs record your own days. A drill appears in the library only while a saved report in scope recommends it.
+- The Training view is tested with automated tests and checked by hand in the built-in browser at 375 px and 1280 px. Other browsers are not tested.
+
+Routes (all require login; changes also require the `X-Film-Room` header): `GET /api/analytics/dashboard`, `GET /api/analytics/issues`, `GET /api/analytics/compare`, `GET /api/analytics/drills`, `GET /api/drill-practice`, `POST /api/drill-practice`, `DELETE /api/drill-practice/<id>`, `GET /api/history`, `GET /api/reviews/<id>`.
+
+Database: schema version 5 adds normalized finding, drill and practice tables, and a `judged_areas_json` column on reports. Upgrading from version 4 keeps every report. The upgrade from version 4 was rehearsed on a copy, checked row by row against the stored reports, and applied only after a verified backup.
 
 ### AI film review (command line)
 

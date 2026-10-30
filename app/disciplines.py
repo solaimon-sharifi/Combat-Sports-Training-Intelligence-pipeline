@@ -9,7 +9,7 @@ any of this text changes prompt_version(), which invalidates cached reports.
 import hashlib
 import json
 
-REPORT_VERSION = 5
+REPORT_VERSION = 6
 MAX_PRIORITIES = 3
 CONFIDENCE = ["observed", "inferred", "uncertain"]
 EVIDENCE_STATUS = ["sufficient", "limited", "insufficient"]
@@ -27,6 +27,8 @@ Evidence labels. Every observation and technical finding must cite the frame num
 Never claim speed, power, timing, reaction time, impact, or whether a strike, takedown, or submission succeeded unless a frame clearly shows it. Do not name a technique unless it is unambiguous in the frames.
 
 Describe only what one or more frames show, and cite those frames. Do not describe habits, tendencies, or how often something happens ("always", "never", "keeps", "tends to", "habit", "consistently"), because sparse frames cannot show them. Do not estimate exact distances or measurements. Describe distance only as close, medium, or far, and describe stance width only as narrow, medium, or wide, using the frames. Do not say an athlete's form would lose power or balance unless a frame shows the loss.
+
+In judged_areas, list every area you could assess from these frames, even when you found nothing wrong. Leave out any area the frames do not show. This lets the user tell "no problem seen" apart from "not visible."
 
 Insufficient evidence is an acceptable answer. Set evidence_status to "insufficient" when the athlete cannot be seen well enough to judge technique, "limited" when only some areas can be judged, and "sufficient" otherwise. Explain the reason in evidence_note. When the status is "insufficient", leave the findings, priorities, and drills empty.
 
@@ -177,6 +179,75 @@ DISCIPLINES = {
     },
 }
 
+CATEGORIES = [
+    "Stance and guard",
+    "Striking",
+    "Combinations",
+    "Defense and movement",
+    "Footwork and distance",
+    "Clinch and positioning",
+    "Guard retention",
+    "Grappling control",
+    "Escapes",
+    "Transitions",
+    "Submission defence",
+    "Takedown defence",
+    "Cage and positioning",
+]
+
+CATEGORY_BY_AREA = {
+    ("boxing", "stance_guard"): "Stance and guard",
+    ("boxing", "punching"): "Striking",
+    ("boxing", "combinations"): "Combinations",
+    ("boxing", "defensive_movement"): "Defense and movement",
+    ("boxing", "footwork_distance"): "Footwork and distance",
+    ("kickboxing", "stance_guard"): "Stance and guard",
+    ("kickboxing", "punching"): "Striking",
+    ("kickboxing", "kicking"): "Striking",
+    ("kickboxing", "combinations"): "Combinations",
+    ("kickboxing", "distance_management"): "Footwork and distance",
+    ("kickboxing", "defensive_positioning"): "Defense and movement",
+    ("muay_thai", "stance_guard"): "Stance and guard",
+    ("muay_thai", "punches"): "Striking",
+    ("muay_thai", "kicks"): "Striking",
+    ("muay_thai", "knees_elbows"): "Striking",
+    ("muay_thai", "clinch_positioning"): "Clinch and positioning",
+    ("muay_thai", "balance"): "Stance and guard",
+    ("muay_thai", "defensive_technique"): "Defense and movement",
+    ("mma", "striking"): "Striking",
+    ("mma", "takedown_defense"): "Takedown defence",
+    ("mma", "cage_positioning"): "Cage and positioning",
+    ("mma", "transitions"): "Transitions",
+    ("mma", "distance_management"): "Footwork and distance",
+    ("mma", "mixed_situations"): "Transitions",
+    ("bjj", "positional_control"): "Grappling control",
+    ("bjj", "guard_retention"): "Guard retention",
+    ("bjj", "escapes"): "Escapes",
+    ("bjj", "transitions"): "Transitions",
+    ("bjj", "submissions"): "Submission defence",
+    ("bjj", "defensive_positioning"): "Grappling control",
+}
+
+LEGACY_CATEGORY_BY_AREA = {
+    "guard_defense": "Guard retention",
+    "stance_balance": "Stance and guard",
+    "footwork_distance": "Footwork and distance",
+    "offense": "Striking",
+    "defensive_reaction": "Defense and movement",
+}
+
+
+def label_for(key):
+    spec = DISCIPLINES.get(key)
+    return spec["label"] if spec else "Unspecified"
+
+
+def category_for(discipline, area):
+    if (discipline, area) in CATEGORY_BY_AREA:
+        return CATEGORY_BY_AREA[(discipline, area)]
+    return LEGACY_CATEGORY_BY_AREA.get(area, "Uncategorised")
+
+
 LEGACY_AREA_LABELS = {
     "guard_defense": "Guard and defense",
     "stance_balance": "Stance and balance",
@@ -207,6 +278,7 @@ def report_schema(discipline):
         "properties": {
             "evidence_status": {"type": "string", "enum": EVIDENCE_STATUS},
             "evidence_note": {"type": "string"},
+            "judged_areas": {"type": "array", "items": {"type": "string", "enum": areas}},
             "athlete_status": {"type": "string", "enum": ATHLETE_STATUS},
             "athlete_frames": _frames(),
             "athlete_note": {"type": "string"},
@@ -270,7 +342,7 @@ def report_schema(discipline):
             "sampling_caveat": {"type": "string"},
         },
         "required": [
-            "evidence_status", "evidence_note", "athlete_status", "athlete_frames", "athlete_note",
+            "evidence_status", "evidence_note", "judged_areas", "athlete_status", "athlete_frames", "athlete_note",
             "summary", "observations", "technical_findings",
             "drills", "top_priorities", "sampling_caveat",
         ],

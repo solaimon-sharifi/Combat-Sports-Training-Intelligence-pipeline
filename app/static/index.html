@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="report.css">
 <link rel="stylesheet" href="player.css">
 <link rel="stylesheet" href="workspace.css">
+<link rel="stylesheet" href="training.css">
 </head>
 <body>
 
@@ -41,6 +42,10 @@
     </div>
   </div>
   <div class="topbar-right">
+    <nav class="views" aria-label="Views">
+      <button id="viewFilm" class="view-tab" type="button" aria-pressed="true">Film room</button>
+      <button id="viewTraining" class="view-tab" type="button" aria-pressed="false">Training</button>
+    </nav>
     <span id="statusPill" class="pill" data-state="idle" role="status">
       <span class="pill-dot" aria-hidden="true"></span>
       <span id="statusText">Ready</span>
@@ -210,7 +215,7 @@
       </ol>
     </div>
 
-    <article id="result" class="card" hidden>
+    <article id="result" class="card" hidden tabindex="-1">
       <div class="card-head">
         <div>
           <p class="eyebrow">Coaching report</p>
@@ -237,6 +242,98 @@
     </section>
   </section>
 </main>
+
+<div id="trainingView" class="training" hidden>
+  <section class="card training-filters" aria-label="Filters">
+    <form id="trainingFilters" class="filter-row">
+      <label class="field">Sport
+        <select id="filterDiscipline" class="text-input"><option value="">All sports</option></select>
+      </label>
+      <label class="field">From <input id="filterStart" class="text-input" type="date"></label>
+      <label class="field">To <input id="filterEnd" class="text-input" type="date"></label>
+      <button class="btn btn-ghost btn-sm" type="submit">Apply</button>
+    </form>
+    <p id="trainingStatus" class="hint" role="status"></p>
+  </section>
+
+  <div class="training-grid">
+    <section class="card" aria-labelledby="overviewTitle">
+      <div class="card-head"><div><p class="eyebrow">Overview</p><h2 id="overviewTitle">Sessions by sport</h2></div></div>
+      <p id="overviewTotals" class="hint"></p>
+      <div id="overviewBars" class="bars"></div>
+    </section>
+
+    <section class="card" aria-labelledby="needsTitle">
+      <div class="card-head"><div><p class="eyebrow">Needs review</p><h2 id="needsTitle">Detected across multiple sessions</h2></div></div>
+      <p class="hint">Categories detected in at least two saved sessions. A pattern in saved reports is worth checking against the footage. It is not a diagnosis.</p>
+      <div id="needsReview" class="stack"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="recurringTitle">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Recurring issues</p>
+          <h2 id="recurringTitle">Technique categories</h2>
+          <p class="hint">Each row counts saved sessions, not findings. See how counts work.</p>
+          <details class="rules">
+            <summary>How counts work</summary>
+            <ul id="countingRules" class="plain-list"></ul>
+          </details>
+        </div>
+        <label class="field">Category <select id="recurringCategory" class="text-input"></select></label>
+      </div>
+      <div id="recurring" class="stack"></div>
+    </section>
+
+    <section class="card" aria-labelledby="recentTitle">
+      <div class="card-head"><div><p class="eyebrow">Recent</p><h2 id="recentTitle">Latest sessions</h2></div></div>
+      <div id="recent" class="stack"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="compareTitle">
+      <div class="card-head"><div><p class="eyebrow">Compare</p><h2 id="compareTitle">Two sessions, same sport</h2></div></div>
+      <div id="compareOut" class="stack"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="drillsTitle">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Drills</p>
+          <h2 id="drillsTitle">Drill library</h2>
+        </div>
+      </div>
+      <div id="drills" class="stack"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="practiceTitle">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Practice history</p>
+          <h2 id="practiceTitle">Days you practiced</h2>
+        </div>
+        <p id="practiceCount" class="hint"></p>
+      </div>
+      <div id="practiceLog" class="stack"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="historyTitle2">
+      <div class="card-head"><div><p class="eyebrow">History</p><h2 id="historyTitle2">Search saved sessions</h2></div></div>
+      <form id="historySearch" class="filter-row">
+        <label class="field">Search <input id="historyQuery" class="text-input" type="search" placeholder="Context, findings, athlete"></label>
+        <label class="field">Category <select id="historyCategory" class="text-input"></select></label>
+        <label class="field">Drill <input id="historyDrill" class="text-input" type="search" placeholder="Drill name"></label>
+        <label class="check"><input id="historyRecurring" type="checkbox"> Recurring issues only</label>
+        <button class="btn btn-ghost btn-sm" type="submit">Search</button>
+      </form>
+      <div id="historyList" class="stack"></div>
+      <nav class="pager" aria-label="History pages">
+        <button id="prevPage" class="btn btn-ghost btn-sm" type="button">Previous</button>
+        <span id="pageInfo" class="hint"></span>
+        <button id="nextPage" class="btn btn-ghost btn-sm" type="button">Next</button>
+      </nav>
+    </section>
+  </div>
+</div>
 </div>
 <dialog id="confirmDialog" class="dialog" aria-labelledby="confirmTitle">
   <form id="confirmForm" method="dialog" class="dialog-form">
@@ -253,5 +350,6 @@
   </form>
 </dialog>
 <script src="app.js"></script>
+<script src="training.js"></script>
 </body>
 </html>

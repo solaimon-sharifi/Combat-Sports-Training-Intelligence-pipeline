@@ -5,6 +5,8 @@ table goes here as a numbered step, so an existing database upgrades once and
 keeps its rows.
 """
 
+import analytics
+
 MIGRATIONS = {
     1: [
         "ALTER TABLE film_reviews ADD COLUMN report_json TEXT",
@@ -47,6 +49,45 @@ MIGRATIONS = {
     4: [
         "ALTER TABLE videos ADD COLUMN codec TEXT",
     ],
+    5: [
+        "ALTER TABLE film_reviews ADD COLUMN judged_areas_json TEXT",
+        "CREATE TABLE IF NOT EXISTS review_findings ("
+        " finding_id INTEGER PRIMARY KEY,"
+        " review_id INTEGER NOT NULL,"
+        " position INTEGER NOT NULL,"
+        " discipline TEXT NOT NULL,"
+        " area TEXT NOT NULL,"
+        " category TEXT NOT NULL,"
+        " confidence TEXT NOT NULL,"
+        " finding TEXT NOT NULL,"
+        " fix TEXT NOT NULL,"
+        " frames_json TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_review_findings_review ON review_findings(review_id)",
+        "CREATE INDEX IF NOT EXISTS idx_review_findings_category ON review_findings(discipline, category)",
+        "CREATE TABLE IF NOT EXISTS review_drills ("
+        " drill_id INTEGER PRIMARY KEY,"
+        " review_id INTEGER NOT NULL,"
+        " position INTEGER NOT NULL,"
+        " discipline TEXT NOT NULL,"
+        " area TEXT NOT NULL,"
+        " category TEXT NOT NULL,"
+        " drill_key TEXT NOT NULL,"
+        " name TEXT NOT NULL,"
+        " instructions TEXT NOT NULL,"
+        " objective TEXT NOT NULL,"
+        " reps_or_duration TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_review_drills_review ON review_drills(review_id)",
+        "CREATE INDEX IF NOT EXISTS idx_review_drills_key ON review_drills(drill_key)",
+        "CREATE TABLE IF NOT EXISTS drill_practice ("
+        " practice_id INTEGER PRIMARY KEY,"
+        " drill_key TEXT NOT NULL,"
+        " drill_name TEXT NOT NULL DEFAULT '',"
+        " practiced_on TEXT NOT NULL,"
+        " note TEXT NOT NULL DEFAULT '',"
+        " created_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_drill_practice_key ON drill_practice(drill_key, practiced_on)",
+        analytics.backfill,
+    ],
 }
 
 
@@ -65,7 +106,10 @@ def migrate(conn):
             conn.execute("BEGIN")
             try:
                 for statement in MIGRATIONS[target]:
-                    conn.execute(statement)
+                    if callable(statement):
+                        statement(conn)
+                    else:
+                        conn.execute(statement)
                 conn.execute(f"PRAGMA user_version = {int(target)}")
                 conn.execute("COMMIT")
             except Exception:
